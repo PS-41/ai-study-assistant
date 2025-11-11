@@ -2,6 +2,9 @@ from typing import List, Dict
 import re
 from backend.services.extract import read_document_text
 from backend.services.llm import ollama_generate
+import os
+
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
 
 SYSTEM_HINT = (
     "You are a helpful assistant that writes clear multiple-choice questions (MCQs) "
@@ -74,7 +77,8 @@ def parse_mcqs(raw: str) -> List[Dict]:
         })
     return out
 
-def generate_mcqs_from_document(filename: str, n: int = 5, model: str = "llama3.2:3b") -> List[Dict]:
+def generate_mcqs_from_document(filename: str, n: int = 5, model: str = None) -> List[Dict]:
+    model = model or OLLAMA_MODEL
     source = read_document_text(filename, max_chars=8000)
     if not source or len(source.split()) < 40:
         # not enough text; return empty to avoid hallucination

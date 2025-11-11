@@ -7,10 +7,10 @@ services:
     volumes:
       - ollama:/root/.ollama
     healthcheck:
-      test: ["CMD", "bash", "-lc", "curl -sf http://localhost:11434/api/tags || exit 1"]
-      interval: 300s
-      timeout: 300s
-      retries: 50
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
 
   # One-shot job to ensure model is present before api starts
   ollama-pull:
@@ -19,7 +19,9 @@ services:
       ollama:
         condition: service_healthy
     entrypoint: ["/bin/sh","-c"]
-    command: ["ollama pull ${OLLAMA_MODEL}"]
+    command: ["ollama list | grep -q ${OLLAMA_MODEL} || ollama pull ${OLLAMA_MODEL}"]
+    environment:
+      OLLAMA_HOST: "http://ollama:11434"
     restart: "no"
 
   api:
@@ -32,11 +34,11 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       OLLAMA_URL: ${OLLAMA_URL}
       OLLAMA_MODEL: ${OLLAMA_MODEL}
-    depends_on: []
-      # ollama:
-        # condition: service_healthy
-      # ollama-pull:
-        # condition: service_completed_successfully
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
     volumes:
       - appdata:/data
     expose:
