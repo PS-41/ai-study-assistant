@@ -1,0 +1,12 @@
+# If you add a domain later, replace :80 with yourdomain.com
+:80 {
+    # API reverse proxy
+    @api path /api/*
+    reverse_proxy @api api:5000
+
+    # Frontend reverse proxy (web container)
+    @frontend {
+        not path /api/*
+    }
+    reverse_proxy @frontend web:80
+}

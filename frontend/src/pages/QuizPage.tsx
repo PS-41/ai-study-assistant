@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import axios from "axios";
+import { api } from "../lib/api";
 
 type QuizQuestion = { id: number; type: string; prompt: string; options: string[] };
 
@@ -12,7 +12,7 @@ export default function QuizPage() {
 
   useEffect(() => {
     if (!quizId) return;
-    axios.get(`http://localhost:5000/api/quizzes/${quizId}`)
+    api.get(`/api/quizzes/${quizId}`)
       .then(({data}) => setQuestions(data.questions))
       .catch(() => alert("Failed to load quiz"));
   }, [quizId]);
@@ -24,7 +24,7 @@ export default function QuizPage() {
         question_id: Number(qid), user_answer: ans
       }))
     };
-    const { data } = await axios.post("http://localhost:5000/api/quizzes/attempt", payload);
+    const { data } = await api.post("/api/quizzes/attempt", payload);
     setScore(data.score_pct);
   }
 

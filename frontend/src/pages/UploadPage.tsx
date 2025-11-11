@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
+import { api } from "../lib/api";
 import { useNavigate } from "react-router-dom";
 
 export default function UploadPage() {
@@ -10,7 +10,7 @@ export default function UploadPage() {
   const nav = useNavigate();
 
   useEffect(() => {
-    axios.get("http://localhost:5000/api/health")
+    api.get("/api/health")
       .then(() => setStatus("ok"))
       .catch(() => setStatus("error"));
   }, []);
@@ -19,7 +19,7 @@ export default function UploadPage() {
     if (!file) return;
     const fd = new FormData();
     fd.append("file", file);
-    const { data } = await axios.post("http://localhost:5000/api/files/upload", fd, {
+    const { data } = await api.post("/api/files/upload", fd, {
       headers: { "Content-Type": "multipart/form-data" },
     });
     setUploadResp(data);
@@ -29,7 +29,7 @@ export default function UploadPage() {
     if (!uploadResp?.document_id) return;
     setBusy(true);
     try {
-      const { data } = await axios.post("http://localhost:5000/api/quizzes/generate", {
+      const { data } = await api.post("/api/quizzes/generate", {
         document_id: uploadResp.document_id,
         title: "Auto Quiz",
         n: 5
