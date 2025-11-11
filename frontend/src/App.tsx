@@ -1,57 +1,49 @@
-import { useEffect, useState } from "react";
-import axios from "axios";
+import { Link, Route, Routes, useNavigate } from "react-router-dom";
+import UploadPage from "./pages/UploadPage";
+import QuizPage from "./pages/QuizPage";
 
-function App() {
-  const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
-  const [file, setFile] = useState<File | null>(null);
-  const [result, setResult] = useState<string>("");
-
-  useEffect(() => {
-    axios
-      .get("http://localhost:5000/api/health")
-      .then(() => setStatus("ok"))
-      .catch(() => setStatus("error"));
-  }, []);
-
-  async function upload() {
-    if (!file) return;
-    const fd = new FormData();
-    fd.append("file", file);
-    try {
-      const { data } = await axios.post("http://localhost:5000/api/files/upload", fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      setResult(JSON.stringify(data, null, 2));
-    } catch (e) {
-      setResult("Upload failed");
-    }
-  }
-
+export default function App() {
   return (
-    <div style={{ padding: 24, fontFamily: "system-ui, -apple-system, sans-serif" }}>
-      <h1>AI Study Assistant</h1>
-      <p>Backend health: {status === "loading" ? "checking..." : status}</p>
+    <div className="min-h-screen bg-gray-50 text-gray-900">
+      <header className="bg-white border-b">
+        <nav className="container flex items-center justify-between h-14">
+          <Link to="/" className="font-semibold">AI Study Assistant</Link>
+          <div className="flex gap-4 text-sm">
+            <Link to="/upload" className="hover:text-blue-600">Upload</Link>
+            <Link to="/quiz" className="hover:text-blue-600">Quiz</Link>
+          </div>
+        </nav>
+      </header>
 
-      <hr style={{ margin: "16px 0" }} />
+      <main className="container py-6">
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/upload" element={<UploadPage />} />
+          <Route path="/quiz" element={<QuizPage />} />
+        </Routes>
+      </main>
 
-      <h2>Upload a Lecture File (PDF/PPT)</h2>
-      <input
-        type="file"
-        onChange={(e) => setFile(e.target.files?.[0] || null)}
-        accept=".pdf,.ppt,.pptx,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
-      />
-      <button onClick={upload} disabled={!file} style={{ marginLeft: 12 }}>
-        Upload
-      </button>
-
-      {result && (
-        <>
-          <h3>Server Response</h3>
-          <pre>{result}</pre>
-        </>
-      )}
+      <footer className="border-t">
+        <div className="container py-4 text-xs text-gray-500">
+          Built for your MCS project — local LLM + Flask + React.
+        </div>
+      </footer>
     </div>
   );
 }
 
-export default App;
+function Home() {
+  const nav = useNavigate();
+  return (
+    <div className="space-y-4">
+      <h1 className="text-2xl font-semibold">Welcome</h1>
+      <p>Use the Upload page to add a PDF/PPT and generate a quiz with your local LLM.</p>
+      <button
+        onClick={() => nav("/upload")}
+        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+      >
+        Get started
+      </button>
+    </div>
+  );
+}

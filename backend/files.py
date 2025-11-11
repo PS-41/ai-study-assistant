@@ -4,6 +4,7 @@ from flask import Blueprint, request, jsonify
 from werkzeug.utils import secure_filename
 from backend.db import get_db
 from backend.models import Document
+from backend.services.extract import read_document_text
 
 bp = Blueprint("files", __name__)
 
@@ -50,3 +51,12 @@ def list_recent():
             } for d in docs
         ]
     })
+
+@bp.get("/extract_preview/<int:doc_id>")
+def extract_preview(doc_id):
+    db = get_db()
+    doc = db.query(Document).filter_by(id=doc_id).first()
+    if not doc:
+        return jsonify({"error": "document not found"}), 404
+    txt = read_document_text(doc.filename, max_chars=2000)
+    return jsonify({"chars": len(txt), "preview": txt[:500]})
