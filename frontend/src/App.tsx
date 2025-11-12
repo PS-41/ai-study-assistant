@@ -3,6 +3,8 @@ import UploadPage from "./pages/UploadPage";
 import QuizPage from "./pages/QuizPage";
 import AuthLogin from "./pages/AuthLogin";
 import AuthSignup from "./pages/AuthSignup";
+import DocsPage from "./pages/DocsPage";
+import QuizzesPage from "./pages/QuizzesPage";
 import { useEffect, useState } from "react";
 import { api } from "./lib/api";
 
@@ -31,7 +33,12 @@ export default function App() {
           <Link to="/" className="font-semibold">AI Study Assistant</Link>
           <div className="flex items-center gap-4 text-sm">
             <Link to="/upload" className="hover:text-blue-600">Upload</Link>
-            <Link to="/quiz" className="hover:text-blue-600">Quiz</Link>
+            {me && (
+              <>
+                <Link to="/docs" className="hover:text-blue-600">My Documents</Link>
+                <Link to="/quizzes" className="hover:text-blue-600">My Quizzes</Link>
+              </>
+            )}
             {me ? (
               <div className="flex items-center gap-3">
                 <span className="text-gray-600">Hi, {me.name.split(" ")[0]}</span>
@@ -54,6 +61,8 @@ export default function App() {
           <Route path="/quiz" element={<QuizPage />} />
           <Route path="/login" element={<AuthLogin />} />
           <Route path="/signup" element={<AuthSignup />} />
+          <Route path="/docs" element={<DocsPage />} />
+          <Route path="/quizzes" element={<QuizzesPage />} />
         </Routes>
       </main>
 

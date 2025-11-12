@@ -1,11 +1,17 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 from backend.db import get_db
 from backend.models import Document, Quiz, Question, Attempt, AttemptAnswer
 from backend.services.generate import generate_mcqs_from_document
+from backend.utils_auth import auth_required
+
+# added per instruction
+from backend.services.extract import UPLOAD_DIR
+import os
 
 bp = Blueprint("quizzes", __name__)
 
 @bp.post("/generate")
+@auth_required
 def generate():
     payload = request.get_json(force=True)
     document_id = payload.get("document_id")
@@ -16,6 +22,14 @@ def generate():
     doc = db.query(Document).filter_by(id=document_id).first()
     if not doc:
         return jsonify({"error": "document not found"}), 404
+    # Enforce ownership (allow legacy NULL-owner docs)
+    if getattr(doc, "user_id", None) is not None and doc.user_id != g.user_id:
+        return jsonify({"error": "forbidden"}), 403
+
+    # ensure file exists on disk (handles legacy overwritten cases)
+    disk_path = os.path.join(UPLOAD_DIR, doc.filename)
+    if not os.path.exists(disk_path):
+        return jsonify({"error": "The source file is missing on the server. Please re-upload and try again."}), 410
 
     mcqs = generate_mcqs_from_document(doc.filename, n=num_questions)
     if not mcqs:
@@ -87,3 +101,75 @@ def attempt():
     att.score_pct = round(100 * correct / max(1, len(answers)))
     db.commit()
     return jsonify({"attempt_id": att.id, "score_pct": att.score_pct})
+
+@bp.get("/mine")
+@auth_required
+def my_quizzes():
+    db = get_db()
+    # quizzes for docs owned by user (or legacy docs with NULL user_id, show too)
+    q = (db.query(Quiz, Document)
+           .join(Document, Quiz.document_id == Document.id)
+           .filter((Document.user_id == g.user_id) | (Document.user_id.is_(None)))
+           .order_by(Quiz.created_at.desc())
+           .limit(100))
+    items = []
+    for quiz, doc in q.all():
+        cnt = db.query(Attempt).filter_by(quiz_id=quiz.id).count()
+        items.append({
+            "quiz_id": quiz.id,
+            "title": quiz.title,
+            "document_id": doc.id,
+            "document_name": doc.original_name,
+            "created_at": quiz.created_at.isoformat(),
+            "attempts": cnt
+        })
+    return jsonify({"items": items})
+
+@bp.get("/<int:quiz_id>/attempts")
+@auth_required
+def quiz_attempts(quiz_id):
+    db = get_db()
+    # optional: authorize that the quiz belongs to this user
+    from backend.models import Question
+    quiz = db.query(Quiz).filter_by(id=quiz_id).first()
+    if not quiz:
+        return jsonify({"error":"not found"}), 404
+    doc = db.query(Document).filter_by(id=quiz.document_id).first()
+    if doc and doc.user_id and doc.user_id != g.user_id:
+        return jsonify({"error":"forbidden"}), 403
+
+    atts = db.query(Attempt).filter_by(quiz_id=quiz_id).order_by(Attempt.created_at.desc()).limit(50)
+    return jsonify({
+        "items": [{
+            "id": a.id,
+            "score_pct": a.score_pct,
+            "created_at": a.created_at.isoformat()
+        } for a in atts.all()]
+    })
+
+@bp.get("/<int:quiz_id>/answers")
+@auth_required
+def quiz_answers(quiz_id):
+    db = get_db()
+    quiz = db.query(Quiz).filter_by(id=quiz_id).first()
+    if not quiz:
+        return jsonify({"error": "not found"}), 404
+
+    doc = db.query(Document).filter_by(id=quiz.document_id).first()
+    if doc and doc.user_id and doc.user_id != g.user_id:
+        return jsonify({"error": "forbidden"}), 403
+
+    qs = db.query(Question).filter_by(quiz_id=quiz_id).order_by(Question.id.asc()).all()
+    return jsonify({
+        "quiz_id": quiz_id,
+        "answers": [
+            {
+                "id": q.id,
+                "prompt": q.prompt,
+                "options": q.options.split("|||"),
+                "answer": q.answer,
+                "explanation": q.explanation or ""
+            }
+            for q in qs
+        ]
+    })
