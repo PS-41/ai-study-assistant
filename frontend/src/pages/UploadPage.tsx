@@ -3,26 +3,38 @@ import { api } from "../lib/api";
 import { useNavigate } from "react-router-dom";
 
 export default function UploadPage() {
-  const [status, setStatus] = useState<"loading"|"ok"|"error">("loading");
   const [file, setFile] = useState<File|null>(null);
   const [uploadResp, setUploadResp] = useState<any>(null);
   const [busy, setBusy] = useState(false);
+  const [me, setMe] = useState<{id:number;email:string;name:string}|null>(null);
   const nav = useNavigate();
 
   useEffect(() => {
-    api.get("/api/health")
-      .then(() => setStatus("ok"))
-      .catch(() => setStatus("error"));
+    api.get("/api/auth/me")
+      .then(({data}) => setMe(data))
+      .catch(() => setMe(null));
   }, []);
 
   async function upload() {
     if (!file) return;
-    const fd = new FormData();
-    fd.append("file", file);
-    const { data } = await api.post("/api/files/upload", fd, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
-    setUploadResp(data);
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await api.post("/api/files/upload", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setUploadResp(data);
+    } catch (e: any) {
+      if (e?.response?.status === 401) {
+        alert("Please login to upload.");
+        nav("/login");
+      } else {
+        alert(e?.response?.data?.error || "Upload failed");
+      }
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function generateQuiz() {
@@ -43,13 +55,21 @@ export default function UploadPage() {
     }
   }
 
+  if (!me) {
+    return (
+      <div className="space-y-3">
+        <h2 className="text-lg font-semibold">Please sign in</h2>
+        <p className="text-sm text-gray-600">You need an account to upload files and generate quizzes.</p>
+        <div className="flex gap-3">
+          <button onClick={()=>nav("/login")} className="px-4 py-2 bg-blue-600 text-white rounded">Login</button>
+          <button onClick={()=>nav("/signup")} className="px-4 py-2 bg-gray-200 rounded">Sign up</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      <div className="rounded border bg-white p-4">
-        <h2 className="text-lg font-semibold">System</h2>
-        <p>Backend health: <b>{status === "loading" ? "checking..." : status}</b></p>
-      </div>
-
       <div className="rounded border bg-white p-4 space-y-3">
         <h2 className="text-lg font-semibold">Upload a Lecture File</h2>
         <input
@@ -60,10 +80,10 @@ export default function UploadPage() {
         />
         <button
           onClick={upload}
-          disabled={!file}
+          disabled={!file || busy}
           className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
         >
-          Upload
+          {busy ? "Uploading..." : "Upload"}
         </button>
 
         {uploadResp && (

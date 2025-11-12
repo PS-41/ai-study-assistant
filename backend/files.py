@@ -5,12 +5,14 @@ from werkzeug.utils import secure_filename
 from backend.db import get_db
 from backend.models import Document
 from backend.services.extract import read_document_text
+from backend.utils_auth import auth_required
 
 bp = Blueprint("files", __name__)
 
 UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "uploads"))
 
 @bp.post("/upload")
+@auth_required
 def upload():
     f = request.files.get("file")
     if not f:
@@ -24,6 +26,13 @@ def upload():
 
     db = get_db()
     doc = Document(filename=safe, original_name=f.filename, mime_type=f.mimetype, size=size)
+    # attach current user
+    try:
+        from sqlalchemy import inspect
+        # set only if the column exists (it should, after ensure_optional_user_id_column)
+        setattr(doc, "user_id", getattr(g, "user_id", None))
+    except Exception:
+        pass
     db.add(doc)
     db.commit()
 
