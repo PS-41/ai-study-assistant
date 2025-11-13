@@ -14,7 +14,7 @@ def ollama_generate(model: str, prompt: str, temperature: float = 0.2, max_token
         "prompt": prompt,
         "temperature": temperature,
         "options": {"num_predict": max_tokens}
-    }, stream=True, timeout=120)
+    }, stream=True, timeout=300)
 
     resp.raise_for_status()
     out = []

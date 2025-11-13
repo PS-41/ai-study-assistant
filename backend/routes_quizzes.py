@@ -32,6 +32,7 @@ def generate():
         return jsonify({"error": "The source file is missing on the server. Please re-upload and try again."}), 410
 
     mcqs = generate_mcqs_from_document(doc.filename, n=num_questions)
+
     if not mcqs:
         return jsonify({"error": "not enough text to generate questions"}), 400
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useNavigate } from "react-router-dom";
+import ProgressOverlay from "../components/ProgressOverlay";
 
 const apiOrigin = import.meta.env.DEV ? "http://localhost:5000" : "";
 const apiHref = (path: string) => `${apiOrigin}${path}`;
@@ -19,6 +20,7 @@ export default function DocsPage() {
   const [items, setItems] = useState<Doc[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyDocId, setBusyDocId] = useState<number | null>(null);
+  const [showProgress, setShowProgress] = useState(false);
   const nav = useNavigate();
 
   useEffect(() => {
@@ -39,6 +41,7 @@ export default function DocsPage() {
 
   async function genQuiz(docId: number) {
     setBusyDocId(docId);
+    setShowProgress(true);
     try {
       const { data } = await api.post("/api/quizzes/generate", {
         document_id: docId,
@@ -56,6 +59,7 @@ export default function DocsPage() {
       }
     } finally {
       setBusyDocId(null); // <-- clear busy state
+      setShowProgress(false);
     }
   }
 
@@ -111,6 +115,19 @@ export default function DocsPage() {
           </div>
         ))}
       </div>
+
+      {showProgress && (
+        <ProgressOverlay
+          title="Generating your quiz"
+          messages={[
+            "Extracting content…",
+            "Identifying key points…",
+            "Drafting multiple-choice questions…",
+            "Balancing distractors…",
+            "Finalizing quiz…"
+          ]}
+        />
+      )}
     </div>
   );
 }

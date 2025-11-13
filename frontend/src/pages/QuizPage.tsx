@@ -113,7 +113,7 @@ export default function QuizPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Quiz #{quizId}</h2>
+        <h2 className="text-xl font-semibold">Quiz</h2>
         <div className="flex gap-2">
           <button
             onClick={toggleAnswers}

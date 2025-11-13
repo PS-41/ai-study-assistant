@@ -2,7 +2,11 @@
 :80 {
     # API reverse proxy
     @api path /api/*
-    reverse_proxy @api api:5000
+    reverse_proxy @api api:5000 {
+        transport http {
+            read_timeout 1550s
+        }
+    }
 
     # Frontend reverse proxy (web container)
     @frontend {

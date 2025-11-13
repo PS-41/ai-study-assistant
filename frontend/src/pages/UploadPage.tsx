@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useNavigate } from "react-router-dom";
+import ProgressOverlay from "../components/ProgressOverlay";
 
 export default function UploadPage() {
   const [file, setFile] = useState<File|null>(null);
   const [uploadResp, setUploadResp] = useState<any>(null);
-  const [busy, setBusy] = useState(false);
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const [genBusy, setGenBusy] = useState(false);
+  const [showGenProgress, setShowGenProgress] = useState(false);
   const [me, setMe] = useState<{id:number;email:string;name:string}|null>(null);
   const nav = useNavigate();
 
@@ -17,7 +20,7 @@ export default function UploadPage() {
 
   async function upload() {
     if (!file) return;
-    setBusy(true);
+    setUploadBusy(true);
     try {
       const fd = new FormData();
       fd.append("file", file);
@@ -33,13 +36,14 @@ export default function UploadPage() {
         alert(e?.response?.data?.error || "Upload failed");
       }
     } finally {
-      setBusy(false);
+      setUploadBusy(false);
     }
   }
 
   async function generateQuiz() {
     if (!uploadResp?.document_id) return;
-    setBusy(true);
+    setGenBusy(true);
+    setShowGenProgress(true);
     try {
       const { data } = await api.post("/api/quizzes/generate", {
         document_id: uploadResp.document_id,
@@ -51,7 +55,8 @@ export default function UploadPage() {
       const msg = e?.response?.data?.error || "Quiz generation failed. Try another file.";
       alert(msg);
     } finally {
-      setBusy(false);
+      setGenBusy(false);
+      setShowGenProgress(false);
     }
   }
 
@@ -80,15 +85,15 @@ export default function UploadPage() {
         />
         <button
           onClick={upload}
-          disabled={!file || busy}
+          disabled={!file || uploadBusy}
           className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
         >
-          {busy ? "Uploading..." : "Upload"}
+          {uploadBusy ? "Uploading..." : "Upload"}
         </button>
 
         {uploadResp && (
           <div className="text-sm text-gray-700">
-            Stored as: <b>{uploadResp.filename}</b> (ID: {uploadResp.document_id})
+            File uploaded in your documents
           </div>
         )}
       </div>
@@ -97,12 +102,25 @@ export default function UploadPage() {
         <div className="rounded border bg-white p-4">
           <button
             onClick={generateQuiz}
-            disabled={busy}
+            disabled={genBusy}
             className="px-4 py-2 bg-emerald-600 text-white rounded disabled:opacity-50"
           >
-            {busy ? "Generating..." : "Generate Quiz from this Document"}
+            {genBusy ? "Generating..." : "Generate Quiz from this Document"}
           </button>
         </div>
+      )}
+
+      {showGenProgress && (
+        <ProgressOverlay
+          title="Generating your quiz"
+          messages={[
+            "Reading your document…",
+            "Extracting key points…",
+            "Composing questions…",
+            "Selecting plausible distractors…",
+            "Ensuring answer consistency…"
+          ]}
+        />
       )}
     </div>
   );

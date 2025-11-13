@@ -23,4 +23,4 @@ ENV SECRET_KEY=${SECRET_KEY}
 EXPOSE 5000
 
 # Gunicorn entry (app module: backend/app.py exposes "app")
-CMD ["gunicorn", "-b", "0.0.0.0:5000", "backend.app:app", "--workers", "2", "--threads", "4", "--timeout", "120"]
+CMD ["gunicorn", "-b", "0.0.0.0:5000", "backend.app:app", "--workers", "2", "--threads", "4", "--timeout", "1500"]

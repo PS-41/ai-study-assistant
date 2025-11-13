@@ -7,10 +7,11 @@ import os
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
 
 SYSTEM_HINT = (
-    "You are a helpful assistant that writes clear multiple-choice questions (MCQs) "
-    "based strictly on the provided source text. Avoid trivia; focus on key ideas. "
-    "Each question must have exactly 4 options, with only one correct answer. "
-    "Return exactly N questions in the specified output format."
+    "You are a precise and helpful assistant that writes clear multiple-choice questions (MCQs) "
+    "based STRICTLY on the provided source text. Avoid trivia; focus on key ideas. "
+    "Each question must have exactly 4 options, with ONLY ONE correct answer. "
+    "Do NOT add introductions, summaries, or any text outside the required format. "
+    "Return exactly N questions FOLLOWING THE EXAMPLE FORMAT BELOW — nothing else."
 )
 
 PROMPT_TEMPLATE = """
@@ -21,15 +22,28 @@ Source (trimmed):
 {source}
 \"\"\"
 
-Write exactly {n} MCQs. Use this format for each question:
+You MUST return exactly {n} MCQs following the format below.
+Each question must strictly match the structure and spacing shown in this EXAMPLE — no numbering, no bullets, no extra text.
 
-Q: <question text>
-A) <option 1>
-B) <option 2>
-C) <option 3>
-D) <option 4>
-Answer: <A|B|C|D>
-Explanation: <one sentence why the answer is correct>
+Example format (follow this EXACTLY):
+
+Q: What is the capital of France?
+A) Berlin
+B) Madrid
+C) Paris
+D) Rome
+Answer: C
+Explanation: Paris is the capital city of France.
+
+---
+
+Now write exactly {n} MCQs in the above format based only on the given source.
+IMPORTANT INSTRUCTIONS:
+- Start every question with "Q:" (not "Question:" or any numbering).
+- Each question must have exactly 4 options labeled A), B), C), D).
+- "Answer:" must be followed by exactly one letter (A/B/C/D) on its own line.
+- "Explanation:" must start on a NEW line after "Answer:" It should be one or two concise sentence explaining why that answer is correct.
+- Do NOT include any additional commentary, titles, or text before or after the questions.
 """
 
 def parse_mcqs(raw: str) -> List[Dict]:
@@ -85,7 +99,11 @@ def generate_mcqs_from_document(filename: str, n: int = 5, model: str = None) ->
         return []
 
     prompt = PROMPT_TEMPLATE.format(system_hint=SYSTEM_HINT, source=source, n=n)
-    raw = ollama_generate(model=model, prompt=prompt, temperature=0.2, max_tokens=1200)
-    mcqs = parse_mcqs(raw)
-    # Keep exactly n if more were parsed
-    return mcqs[:n]
+    max_retries = 5
+    for attempt in range(1, max_retries + 1):
+        raw = ollama_generate(model=model, prompt=prompt, temperature=0.2, max_tokens=1200)
+        mcqs = parse_mcqs(raw)
+        if mcqs:
+            return mcqs[:n]
+
+    return []
