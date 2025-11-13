@@ -72,22 +72,27 @@ def get_quiz(quiz_id):
 @bp.post("/attempt")
 def attempt():
     payload = request.get_json(force=True)
-    quiz_id = payload["quiz_id"]
-    answers = payload["answers"]  # list of {question_id, user_answer}
+    quiz_id = int(payload["quiz_id"])
+    answers = payload.get("answers", [])
 
     db = get_db()
-    qs = {q.id: q for q in db.query(Question).filter_by(quiz_id=quiz_id).all()}
+    qs = list(db.query(Question).filter_by(quiz_id=quiz_id).all())
     if not qs:
         return jsonify({"error": "quiz not found"}), 404
+
+    qmap = {q.id: q for q in qs}
+    total = len(qs)
 
     att = Attempt(quiz_id=quiz_id)
     db.add(att); db.flush()
 
     correct = 0
+    details = []  # <-- collect per-question results
+
     for a in answers:
-        qid = int(a["question_id"])
-        ans = str(a["user_answer"]).strip()
-        q = qs.get(qid)
+        qid = int(a.get("question_id"))
+        ans = str(a.get("user_answer", "")).strip()
+        q = qmap.get(qid)
         if not q:
             continue
         is_ok = (ans == q.answer)
@@ -99,9 +104,17 @@ def attempt():
             user_answer=ans,
             is_correct=is_ok
         ))
-    att.score_pct = round(100 * correct / max(1, len(answers)))
+        details.append({"question_id": qid, "user_answer": ans, "is_correct": is_ok})
+
+    att.score_pct = round(100 * correct / max(1, total))
     db.commit()
-    return jsonify({"attempt_id": att.id, "score_pct": att.score_pct})
+    return jsonify({
+        "attempt_id": att.id,
+        "correct": correct,
+        "total": total,
+        "score_pct": att.score_pct,
+        "details": details  # <-- NEW
+    })
 
 @bp.get("/mine")
 @auth_required

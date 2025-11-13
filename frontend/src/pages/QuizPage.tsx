@@ -28,11 +28,15 @@ export default function QuizPage() {
   const [sel, setSel] = useState<Record<number, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [score, setScore] = useState<number | null>(null);
+  const [submitted, setSubmitted] = useState(false);
+  const [resultDetails, setResultDetails] = useState<Record<number, {is_correct:boolean; user_answer:string}>>({});
+  const [resultOpen, setResultOpen] = useState(false);
+  const [result, setResult] = useState<{correct:number; total:number; pct:number} | null>(null);
 
   // Answers state
   const [showAnswers, setShowAnswers] = useState(false);
   const [answersLoading, setAnswersLoading] = useState(false);
-  const [answers, setAnswers] = useState<Record<number, A>>({}); // keyed by question id
+  const [answers, setAnswers] = useState<Record<number, A>>({}); // keyed by question id  
 
   useEffect(() => {
     if (!quizId) return;
@@ -65,6 +69,15 @@ export default function QuizPage() {
       };
       const { data } = await api.post("/api/quizzes/attempt", payload);
       setScore(data.score_pct);
+      setResult({ correct: data.correct, total: data.total, pct: data.score_pct });
+      setResultOpen(true); // open modal
+      // Map details: question_id -> {is_correct, user_answer}
+      const map: Record<number, {is_correct:boolean; user_answer:string}> = {};
+      (data.details || []).forEach((d: any) => {
+        map[d.question_id] = { is_correct: !!d.is_correct, user_answer: String(d.user_answer || "") };
+      });
+      setResultDetails(map);
+      setSubmitted(true);
     } catch (e: any) {
       alert(e?.response?.data?.error || "Submission failed");
     } finally {
@@ -142,15 +155,27 @@ export default function QuizPage() {
               </div>
               <div className="grid gap-2">
                 {q.options.map((opt, idx) => {
-                  const isCorrect = reveal && a?.answer === opt;
                   const isChosen = chosen === opt;
+
+                  // For “View Answers” mode (show all correct answers)
+                  const isCorrectReveal = reveal && a?.answer === opt;
+
+                  // When user has submitted, mark their chosen correct option green
+                  const chosenCorrectAfterSubmit =
+                    submitted && isChosen && resultDetails[q.id]?.is_correct === true;
+
                   return (
                     <label
                       key={idx}
                       className={[
                         "flex items-center gap-2 rounded border p-2 cursor-pointer",
-                        isCorrect ? "border-emerald-500 bg-emerald-50" : "",
-                        !isCorrect && reveal && isChosen ? "border-red-400 bg-red-50" : "",
+                        // Green if correct (either revealed or correct chosen after submit)
+                        isCorrectReveal ? "border-emerald-500 bg-emerald-50" : "",
+                        chosenCorrectAfterSubmit ? "border-emerald-500 bg-emerald-50" : "",
+                        // Red only when in “View Answers” mode and chosen wrong
+                        !isCorrectReveal && reveal && isChosen
+                          ? "border-red-400 bg-red-50"
+                          : "",
                       ].join(" ")}
                     >
                       <input
@@ -198,6 +223,48 @@ export default function QuizPage() {
           <span className="ml-3 text-sm text-gray-600">Loading answers…</span>
         )}
       </div>
+
+      {resultOpen && result && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between">
+              <h3 className="text-lg font-semibold">Result</h3>
+              <button
+                onClick={() => setResultOpen(false)}
+                className="ml-4 text-gray-500 hover:text-gray-700"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mt-3">
+              <div className="text-2xl font-bold">
+                {result.correct} / {result.total}
+              </div>
+              <div className="text-sm text-gray-600">Score: {result.pct}%</div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setResultOpen(false)}
+                className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300"
+              >
+                Close
+              </button>
+              <button
+                onClick={async () => {
+                  // Ensure answers are loaded & visible
+                  if (!showAnswers) await toggleAnswers();
+                  setResultOpen(false);
+                }}
+                className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
+              >
+                View answers
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
