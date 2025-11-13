@@ -9,6 +9,7 @@ from backend.routes_auth import bp as auth_bp
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev")
+app.config["DATABASE_URL"] = os.getenv("DATABASE_URL", f"sqlite:///{os.path.abspath(os.path.join(os.path.dirname(__file__), "app.sqlite"))}")
 
 # CORS: allow Vite in dev; prod is same-origin (behind Caddy)
 ALLOW_ORIGIN = os.getenv("ALLOW_ORIGIN", "http://localhost:5173")
