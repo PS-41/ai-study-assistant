@@ -31,6 +31,29 @@ class Summary(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     document = relationship("Document")
 
+class FlashcardSet(Base):
+    __tablename__ = "flashcard_sets"
+
+    id = Column(Integer, primary_key=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    title = Column(String(255), nullable=False, default="Flashcards")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    document = relationship("Document")
+    cards = relationship("Flashcard", back_populates="set", cascade="all, delete-orphan")
+
+class Flashcard(Base):
+    __tablename__ = "flashcards"
+
+    id = Column(Integer, primary_key=True)
+    set_id = Column(Integer, ForeignKey("flashcard_sets.id"), nullable=False)
+    front = Column(Text, nullable=False)   # question / prompt / term
+    back = Column(Text, nullable=False)    # answer / explanation
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    set = relationship("FlashcardSet", back_populates="cards")
+
 class Quiz(Base):
     __tablename__ = "quizzes"
     id = Column(Integer, primary_key=True)

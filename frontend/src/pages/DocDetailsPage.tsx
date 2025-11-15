@@ -29,6 +29,17 @@ export default function DocDetailsPage() {
   const [summaryUpdatedAt, setSummaryUpdatedAt] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
 
+  const [flashcardSets, setFlashcardSets] = useState<
+    { id: number; title: string; document_id: number; created_at: string | null; count: number }[]
+  >([]);
+  const [flashLoading, setFlashLoading] = useState(false);
+
+  const [activeSetId, setActiveSetId] = useState<number | null>(null);
+  const [cards, setCards] = useState<{ id: number; front: string; back: string }[]>([]);
+  const [reviewIndex, setReviewIndex] = useState(0);
+  const [showBack, setShowBack] = useState(false);
+
+
   useEffect(() => {
     if (!docId || Number.isNaN(docId)) return;
     setLoading(true);
@@ -85,6 +96,61 @@ export default function DocDetailsPage() {
     }
   }
 
+  async function loadFlashcardSets() {
+    if (!docId || Number.isNaN(docId)) return;
+    setFlashLoading(true);
+    try {
+      const { data } = await api.get("/api/flashcards", {
+        params: { document_id: docId },
+      });
+      setFlashcardSets(data.items || []);
+    } catch (e: any) {
+      alert(e?.response?.data?.error || "Failed to load flashcards");
+      setFlashcardSets([]);
+    } finally {
+      setFlashLoading(false);
+    }
+  }
+
+  async function loadSetCards(setId: number) {
+    setFlashLoading(true);
+    try {
+      const { data } = await api.get(`/api/flashcards/set/${setId}`);
+      setActiveSetId(setId);
+      setCards(data.cards || []);
+      setReviewIndex(0);
+      setShowBack(false);
+    } catch (e: any) {
+      alert(e?.response?.data?.error || "Failed to load flashcard set");
+      setCards([]);
+      setActiveSetId(null);
+    } finally {
+      setFlashLoading(false);
+    }
+  }
+
+  async function generateFlashcards() {
+    if (!docId || Number.isNaN(docId)) return;
+    setFlashLoading(true);
+    try {
+      const { data } = await api.post("/api/flashcards/generate", {
+        document_id: docId,
+        n: 12,
+      });
+      // After generating, reload sets and auto-open the new one
+      await loadFlashcardSets();
+      if (data.set_id) {
+        await loadSetCards(data.set_id);
+      }
+    } catch (e: any) {
+      alert(e?.response?.data?.error || "Flashcard generation failed");
+    } finally {
+      setFlashLoading(false);
+    }
+  }
+
+
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -115,7 +181,10 @@ export default function DocDetailsPage() {
           Quizzes
         </button>
         <button
-          onClick={() => setActiveTab("flashcards")}
+          onClick={() => {
+            setActiveTab("flashcards");
+            loadFlashcardSets();
+          }}
           className={
             "px-3 py-2 -mb-px border-b-2 " +
             (activeTab === "flashcards"
@@ -183,11 +252,106 @@ export default function DocDetailsPage() {
       )}
 
       {activeTab === "flashcards" && (
-        <div className="text-sm text-gray-700">
-          Flashcards for this document will appear here.
-          <br />
-          In the next steps, we&apos;ll add an option to generate a flashcard deck from this file
-          and review it in a card-flip view.
+        <div className="space-y-4">
+          {flashLoading && (
+            <div className="text-sm text-gray-600">Working on flashcards…</div>
+          )}
+
+          {/* Controls */}
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-gray-700">
+              {flashcardSets.length
+                ? `You have ${flashcardSets.length} set${flashcardSets.length > 1 ? "s" : ""} for this document.`
+                : "No flashcards yet for this document."}
+            </div>
+            <button
+              onClick={generateFlashcards}
+              disabled={flashLoading}
+              className="px-4 py-2 bg-emerald-600 text-white text-sm rounded disabled:opacity-50 hover:bg-emerald-700"
+            >
+              {flashcardSets.length ? "Generate another set" : "Generate flashcards"}
+            </button>
+          </div>
+
+          {/* List of sets */}
+          {flashcardSets.length > 0 && (
+            <div className="grid gap-2">
+              {flashcardSets.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => loadSetCards(s.id)}
+                  className={
+                    "flex items-center justify-between rounded border bg-white px-3 py-2 text-left text-sm " +
+                    (activeSetId === s.id ? "border-blue-500" : "border-gray-200 hover:border-gray-400")
+                  }
+                >
+                  <div>
+                    <div className="font-medium">{s.title}</div>
+                    <div className="text-xs text-gray-500">
+                      {new Date(s.created_at || "").toLocaleString()} • {s.count} cards
+                    </div>
+                  </div>
+                  <div className="text-xs text-blue-600">Review</div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Review UI */}
+          {activeSetId && cards.length > 0 && (
+            <div className="mt-4 space-y-3">
+              <div className="text-xs text-gray-500">
+                Card {reviewIndex + 1} of {cards.length}
+              </div>
+              <div className="rounded-xl border bg-white p-4 shadow-sm">
+                <div className="text-xs uppercase text-gray-500 mb-1">
+                  {showBack ? "Back" : "Front"}
+                </div>
+                <div className="text-sm whitespace-pre-wrap">
+                  {showBack ? cards[reviewIndex].back : cards[reviewIndex].front}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                {!showBack ? (
+                  <button
+                    onClick={() => setShowBack(true)}
+                    className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                  >
+                    Show answer
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => {
+                        // Again: stay on same card but flip front
+                        setShowBack(false);
+                      }}
+                      className="px-4 py-2 bg-gray-200 text-sm rounded hover:bg-gray-300"
+                    >
+                      Again
+                    </button>
+                    <button
+                      onClick={() => {
+                        // Got it: go to next card
+                        const next = reviewIndex + 1;
+                        if (next < cards.length) {
+                          setReviewIndex(next);
+                          setShowBack(false);
+                        } else {
+                          // Loop back for now
+                          setReviewIndex(0);
+                          setShowBack(false);
+                        }
+                      }}
+                      className="px-4 py-2 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-700"
+                    >
+                      Got it
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
