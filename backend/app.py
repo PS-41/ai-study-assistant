@@ -1,4 +1,7 @@
 # backend/app.py
+from dotenv import load_dotenv
+load_dotenv()  # Must be first
+
 from flask import Flask
 from flask_cors import CORS
 import os

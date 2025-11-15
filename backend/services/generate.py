@@ -1,7 +1,7 @@
 from typing import List, Dict
 import re
 from backend.services.extract import read_document_text
-from backend.services.llm import ollama_generate
+from backend.services.llm import llm_complete
 import os
 import time
 
@@ -93,8 +93,6 @@ def parse_mcqs(raw: str) -> List[Dict]:
     return out
 
 def generate_mcqs_from_document(filename: str, n: int = 5, model: str = None) -> List[Dict]:
-    model = model or OLLAMA_MODEL
-
     # Keep source short enough for small models, but with enough signal
     source = read_document_text(filename, max_chars=8000)
     if not source or len(source.split()) < 40:
@@ -107,10 +105,9 @@ def generate_mcqs_from_document(filename: str, n: int = 5, model: str = None) ->
     for attempt in range(1, max_retries + 1):
         try:
             # Optional: add stop sequences to reduce trailing chatter
-            raw = ollama_generate(
-                model=model,
-                prompt=prompt,
-                temperature=0.2,
+            raw = llm_complete(
+                prompt=prompt, 
+                temperature=0.2, 
                 max_tokens=1200
             )
         except Exception as e:

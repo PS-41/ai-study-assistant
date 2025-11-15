@@ -6,3 +6,4 @@ python-pptx
 requests
 bcrypt
 pyjwt
+python-dotenv
