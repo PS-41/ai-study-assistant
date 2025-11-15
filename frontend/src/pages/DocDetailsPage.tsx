@@ -36,8 +36,7 @@ export default function DocDetailsPage() {
 
   const [activeSetId, setActiveSetId] = useState<number | null>(null);
   const [cards, setCards] = useState<{ id: number; front: string; back: string }[]>([]);
-  const [reviewIndex, setReviewIndex] = useState(0);
-  const [showBack, setShowBack] = useState(false);
+  const [flippedById, setFlippedById] = useState<Record<number, boolean>>({});
 
 
   useEffect(() => {
@@ -118,16 +117,17 @@ export default function DocDetailsPage() {
       const { data } = await api.get(`/api/flashcards/set/${setId}`);
       setActiveSetId(setId);
       setCards(data.cards || []);
-      setReviewIndex(0);
-      setShowBack(false);
+      setFlippedById({});   // reset flip state when a new set is opened
     } catch (e: any) {
       alert(e?.response?.data?.error || "Failed to load flashcard set");
       setCards([]);
       setActiveSetId(null);
+      setFlippedById({});
     } finally {
       setFlashLoading(false);
     }
   }
+
 
   async function generateFlashcards() {
     if (!docId || Number.isNaN(docId)) return;
@@ -257,7 +257,7 @@ export default function DocDetailsPage() {
             <div className="text-sm text-gray-600">Working on flashcards…</div>
           )}
 
-          {/* Controls */}
+          {/* Summary + generate button */}
           <div className="flex items-center justify-between">
             <div className="text-sm text-gray-700">
               {flashcardSets.length
@@ -273,83 +273,91 @@ export default function DocDetailsPage() {
             </button>
           </div>
 
-          {/* List of sets */}
+          {/* List of sets; clicking a set shows its cards directly underneath */}
           {flashcardSets.length > 0 && (
-            <div className="grid gap-2">
+            <div className="space-y-2">
               {flashcardSets.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => loadSetCards(s.id)}
-                  className={
-                    "flex items-center justify-between rounded border bg-white px-3 py-2 text-left text-sm " +
-                    (activeSetId === s.id ? "border-blue-500" : "border-gray-200 hover:border-gray-400")
-                  }
-                >
-                  <div>
-                    <div className="font-medium">{s.title}</div>
-                    <div className="text-xs text-gray-500">
-                      {new Date(s.created_at || "").toLocaleString()} • {s.count} cards
-                    </div>
-                  </div>
-                  <div className="text-xs text-blue-600">Review</div>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Review UI */}
-          {activeSetId && cards.length > 0 && (
-            <div className="mt-4 space-y-3">
-              <div className="text-xs text-gray-500">
-                Card {reviewIndex + 1} of {cards.length}
-              </div>
-              <div className="rounded-xl border bg-white p-4 shadow-sm">
-                <div className="text-xs uppercase text-gray-500 mb-1">
-                  {showBack ? "Back" : "Front"}
-                </div>
-                <div className="text-sm whitespace-pre-wrap">
-                  {showBack ? cards[reviewIndex].back : cards[reviewIndex].front}
-                </div>
-              </div>
-              <div className="flex gap-2">
-                {!showBack ? (
+                <div key={s.id} className="rounded border bg-white px-3 py-2">
                   <button
-                    onClick={() => setShowBack(true)}
-                    className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                    onClick={() => loadSetCards(s.id)}
+                    className="flex w-full items-center justify-between text-left text-sm"
                   >
-                    Show answer
+                    <div>
+                      <div className="font-medium">{s.title}</div>
+                      <div className="text-xs text-gray-500">
+                        {new Date(s.created_at || "").toLocaleString()} • {s.count} cards
+                      </div>
+                    </div>
+                    <div className="text-xs text-blue-600">
+                      {activeSetId === s.id ? "Hide cards" : "View cards"}
+                    </div>
                   </button>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => {
-                        // Again: stay on same card but flip front
-                        setShowBack(false);
-                      }}
-                      className="px-4 py-2 bg-gray-200 text-sm rounded hover:bg-gray-300"
-                    >
-                      Again
-                    </button>
-                    <button
-                      onClick={() => {
-                        // Got it: go to next card
-                        const next = reviewIndex + 1;
-                        if (next < cards.length) {
-                          setReviewIndex(next);
-                          setShowBack(false);
-                        } else {
-                          // Loop back for now
-                          setReviewIndex(0);
-                          setShowBack(false);
-                        }
-                      }}
-                      className="px-4 py-2 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-700"
-                    >
-                      Got it
-                    </button>
-                  </>
-                )}
-              </div>
+
+                  {/* Cards for the active set appear right under that set */}
+                  {activeSetId === s.id && cards.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      <div className="text-xs text-gray-500">
+                        Click any card to flip between front and back.
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {cards.map((c) => {
+                          const isFlipped = !!flippedById[c.id];
+                          return (
+                            <div
+                              key={c.id}
+                              className="relative h-36 [perspective:1000px] cursor-pointer"
+                              onClick={() =>
+                                setFlippedById((prev) => ({
+                                  ...prev,
+                                  [c.id]: !prev[c.id],
+                                }))
+                              }
+                            >
+                              <div
+                                className="relative w-full h-full rounded-xl border bg-white shadow-sm"
+                                style={{
+                                  transformStyle: "preserve-3d",
+                                  transform: isFlipped ? "rotateY(180deg)" : "rotateY(0deg)",
+                                  transition: "transform 0.4s ease",
+                                }}
+                              >
+                                {/* Front */}
+                                <div
+                                  className="absolute inset-0 flex flex-col justify-center px-3 py-2"
+                                  style={{ backfaceVisibility: "hidden" }}
+                                >
+                                  <div className="text-[10px] uppercase text-gray-500 mb-1">
+                                    Front
+                                  </div>
+                                  <div className="text-sm whitespace-pre-wrap line-clamp-5">
+                                    {c.front}
+                                  </div>
+                                </div>
+
+                                {/* Back */}
+                                <div
+                                  className="absolute inset-0 flex flex-col justify-center px-3 py-2"
+                                  style={{
+                                    backfaceVisibility: "hidden",
+                                    transform: "rotateY(180deg)",
+                                  }}
+                                >
+                                  <div className="text-[10px] uppercase text-gray-500 mb-1">
+                                    Back
+                                  </div>
+                                  <div className="text-sm whitespace-pre-wrap line-clamp-5">
+                                    {c.back}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>

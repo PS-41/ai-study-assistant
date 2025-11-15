@@ -53,7 +53,7 @@ def generate_summary():
         return jsonify({"error": msg}), code
 
     # Read document text
-    source = read_document_text(doc.filename, max_chars=8000)
+    source = read_document_text(doc.filename)
     if not source or len(source.split()) < 40:
         return jsonify({"error": "not enough text to summarize"}), 400
 

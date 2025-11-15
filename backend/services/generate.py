@@ -94,7 +94,7 @@ def parse_mcqs(raw: str) -> List[Dict]:
 
 def generate_mcqs_from_document(filename: str, n: int = 5, model: str = None) -> List[Dict]:
     # Keep source short enough for small models, but with enough signal
-    source = read_document_text(filename, max_chars=8000)
+    source = read_document_text(filename)
     if not source or len(source.split()) < 40:
         return []  # not enough content — avoid hallucination
 

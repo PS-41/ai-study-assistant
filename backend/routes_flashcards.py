@@ -1,4 +1,5 @@
 # backend/routes_flashcards.py
+import re
 from flask import Blueprint, request, jsonify, g
 from backend.db import get_db
 from backend.models import Document, FlashcardSet, Flashcard
@@ -22,31 +23,31 @@ def _load_doc_for_user(doc_id: int):
 
 def _parse_flashcards(raw: str):
     """
-    Expect format like:
+    Parse multiple flashcards from text in this pattern:
 
-    Q: What is X?
-    A: X is ...
+    Q: <front>
+    A: <back>
 
-    ---
-    Q: ...
-    A: ...
+    Q: <front2>
+    A: <back2>
+    ...
 
-    Returns list of {"front": "...", "back": "..."}.
+    We do NOT rely on '---' separators; we just look for repeated Q:/A: pairs.
     """
-    parts = [p.strip() for p in raw.split("---") if p.strip()]
+    text = raw.replace("\r\n", "\n")
+
+    pattern = re.compile(
+        r"Q:\s*(.+?)\s*A:\s*(.+?)(?=\nQ:|\Z)",
+        re.IGNORECASE | re.DOTALL,
+    )
+
     cards = []
-    for part in parts:
-        lines = [ln.strip() for ln in part.splitlines() if ln.strip()]
-        if not lines:
-            continue
-        q_line = next((ln for ln in lines if ln.lower().startswith("q:")), None)
-        a_line = next((ln for ln in lines if ln.lower().startswith("a:")), None)
-        if not q_line or not a_line:
-            continue
-        front = q_line[2:].strip(" :")  # after "Q:"
-        back = a_line[2:].strip(" :")   # after "A:"
+    for m in pattern.finditer(text):
+        front = m.group(1).strip()
+        back = m.group(2).strip()
         if front and back:
             cards.append({"front": front, "back": back})
+
     return cards
 
 
@@ -133,7 +134,7 @@ def generate_set():
         msg, code = err
         return jsonify({"error": msg}), code
 
-    source = read_document_text(doc.filename, max_chars=8000)
+    source = read_document_text(doc.filename)
     if not source or len(source.split()) < 40:
         return jsonify({"error": "not enough text to generate flashcards"}), 400
 
@@ -168,11 +169,20 @@ Do not number the cards. Just repeat the pattern above {n} times.
     if not cards:
         return jsonify({"error": "no valid flashcards parsed from model output"}), 500
 
-    # Create a new set (you can refine the title later if you want)
+    # Create a new set with a friendly incremental title (Set 1, Set 2, ...)
+    user_id = getattr(g, "user_id", None)
+    existing_count = (
+        db.query(FlashcardSet)
+        .filter(FlashcardSet.document_id == doc.id)
+        .filter(FlashcardSet.user_id == user_id)
+        .count()
+    )
+    title = f"Set {existing_count + 1}"
+
     s = FlashcardSet(
         document_id=doc.id,
-        user_id=getattr(g, "user_id", None),
-        title="Auto flashcards",
+        user_id=user_id,
+        title=title,
     )
     db.add(s)
     db.flush()  # get s.id
