@@ -120,12 +120,21 @@ def attempt():
 @auth_required
 def my_quizzes():
     db = get_db()
-    # quizzes for docs owned by user (or legacy docs with NULL user_id, show too)
-    q = (db.query(Quiz, Document)
-           .join(Document, Quiz.document_id == Document.id)
-           .filter((Document.user_id == g.user_id) | (Document.user_id.is_(None)))
-           .order_by(Quiz.created_at.desc())
-           .limit(100))
+
+    # Base query: quizzes for docs owned by user (or legacy docs with NULL user_id)
+    q = (
+        db.query(Quiz, Document)
+        .join(Document, Quiz.document_id == Document.id)
+        .filter((Document.user_id == g.user_id) | (Document.user_id.is_(None)))
+    )
+
+    # Optional filter by document_id (for the Document Details page)
+    document_id = request.args.get("document_id", type=int)
+    if document_id is not None:
+        q = q.filter(Quiz.document_id == document_id)
+
+    q = q.order_by(Quiz.created_at.desc()).limit(100)
+
     items = []
     for quiz, doc in q.all():
         cnt = db.query(Attempt).filter_by(quiz_id=quiz.id).count()

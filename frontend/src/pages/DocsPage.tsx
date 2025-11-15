@@ -103,6 +103,14 @@ export default function DocsPage() {
                 View
               </a>
 
+              {/* Details button → opens Document Details page */}
+              <button
+                onClick={() => nav(`/docs/${doc.id}`, { state: { docName: doc.original_name } })}
+                className="px-3 py-1 bg-white border rounded hover:bg-gray-50"
+              >
+                Details
+              </button>
+
               {/* Generate button with per-row busy state */}
               <button
                 onClick={() => genQuiz(doc.id)}

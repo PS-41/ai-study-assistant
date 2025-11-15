@@ -5,6 +5,7 @@ import AuthLogin from "./pages/AuthLogin";
 import AuthSignup from "./pages/AuthSignup";
 import DocsPage from "./pages/DocsPage";
 import QuizzesPage from "./pages/QuizzesPage";
+import DocDetailsPage from "./pages/DocDetailsPage";
 import { useEffect, useState } from "react";
 import { api } from "./lib/api";
 
@@ -62,6 +63,7 @@ export default function App() {
           <Route path="/login" element={<AuthLogin />} />
           <Route path="/signup" element={<AuthSignup />} />
           <Route path="/docs" element={<DocsPage />} />
+          <Route path="/docs/:id" element={<DocDetailsPage />} />
           <Route path="/quizzes" element={<QuizzesPage />} />
         </Routes>
       </main>
