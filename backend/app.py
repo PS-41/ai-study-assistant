@@ -8,6 +8,7 @@ import os
 from backend.db import init_db, close_db
 from backend.files import bp as files_bp
 from backend.routes_quizzes import bp as quizzes_bp
+from backend.routes_summaries import bp as summaries_bp
 from backend.routes_auth import bp as auth_bp
 
 app = Flask(__name__)
@@ -29,7 +30,8 @@ def health():
 
 app.register_blueprint(files_bp, url_prefix="/api/files")
 app.register_blueprint(quizzes_bp, url_prefix="/api/quizzes")
-app.register_blueprint(auth_bp, url_prefix="/api/auth")        # <-- add
+app.register_blueprint(auth_bp, url_prefix="/api/auth") 
+app.register_blueprint(summaries_bp, url_prefix="/api/summaries")
 
 if __name__ == "__main__":
     app.run(debug=True)

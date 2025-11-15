@@ -25,6 +25,10 @@ export default function DocDetailsPage() {
   const [quizzes, setQuizzes] = useState<QuizItem[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [summaryText, setSummaryText] = useState<string | null>(null);
+  const [summaryUpdatedAt, setSummaryUpdatedAt] = useState<string | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+
   useEffect(() => {
     if (!docId || Number.isNaN(docId)) return;
     setLoading(true);
@@ -42,6 +46,43 @@ export default function DocDetailsPage() {
         ?.map((a: any) => `${new Date(a.created_at).toLocaleString()}: ${a.score_pct}%`)
         .join("\n") || "No attempts yet.";
     alert(text);
+  }
+
+  async function loadSummaryIfNeeded() {
+    if (!docId || Number.isNaN(docId)) return;
+    setSummaryLoading(true);
+    try {
+      const { data } = await api.get(`/api/summaries/${docId}`);
+      setSummaryText(data.summary || null);
+      setSummaryUpdatedAt(data.created_at || null);
+    } catch (e: any) {
+      const status = e?.response?.status;
+      if (status === 404) {
+        // no summary yet → keep null
+        setSummaryText(null);
+        setSummaryUpdatedAt(null);
+      } else {
+        alert(e?.response?.data?.error || "Failed to load summary");
+      }
+    } finally {
+      setSummaryLoading(false);
+    }
+  }
+
+  async function generateSummary() {
+    if (!docId || Number.isNaN(docId)) return;
+    setSummaryLoading(true);
+    try {
+      const { data } = await api.post("/api/summaries/generate", {
+        document_id: docId,
+      });
+      setSummaryText(data.summary || null);
+      setSummaryUpdatedAt(data.created_at || null);
+    } catch (e: any) {
+      alert(e?.response?.data?.error || "Summary generation failed");
+    } finally {
+      setSummaryLoading(false);
+    }
   }
 
   return (
@@ -85,7 +126,10 @@ export default function DocDetailsPage() {
           Flashcards
         </button>
         <button
-          onClick={() => setActiveTab("summary")}
+          onClick={() => {
+            setActiveTab("summary");
+            loadSummaryIfNeeded();
+          }}
           className={
             "px-3 py-2 -mb-px border-b-2 " +
             (activeTab === "summary"
@@ -148,13 +192,40 @@ export default function DocDetailsPage() {
       )}
 
       {activeTab === "summary" && (
-        <div className="text-sm text-gray-700">
-          A concise summary of this document will appear here.
-          <br />
-          Soon, you&apos;ll be able to generate a short summary and key points using the same AI
-          engine.
+        <div className="space-y-3">
+          {summaryLoading && (
+            <div className="text-sm text-gray-600">
+              {summaryText ? "Updating summary…" : "Generating summary…"}
+            </div>
+          )}
+
+          {!summaryLoading && !summaryText && (
+            <div className="text-sm text-gray-700">
+              No summary has been generated for this document yet.
+            </div>
+          )}
+
+          {summaryText && (
+            <div className="rounded border bg-white p-4 text-sm leading-relaxed whitespace-pre-wrap">
+              {summaryText}
+              {summaryUpdatedAt && (
+                <div className="mt-2 text-xs text-gray-500">
+                  Last updated: {new Date(summaryUpdatedAt).toLocaleString()}
+                </div>
+              )}
+            </div>
+          )}
+
+          <button
+            onClick={generateSummary}
+            disabled={summaryLoading}
+            className="px-4 py-2 bg-blue-600 text-white text-sm rounded disabled:opacity-50 hover:bg-blue-700"
+          >
+            {summaryText ? "Regenerate summary" : "Generate summary"}
+          </button>
         </div>
       )}
+
     </div>
   );
 }
