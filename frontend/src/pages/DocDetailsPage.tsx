@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
+import ProgressOverlay from "../components/ProgressOverlay";
 
 type QuizItem = {
   quiz_id: number;
@@ -18,8 +19,12 @@ export default function DocDetailsPage() {
   const { id } = useParams();
   const docId = Number(id);
   const nav = useNavigate();
-  const location = useLocation() as { state?: { docName?: string } };
-  const docName = location.state?.docName || `Document #${docId}`;
+  const location = useLocation();
+  const state = location.state as { docName?: string } | null;
+  const docName = state?.docName || `Document #${docId}`;
+
+  const [quizGenerating, setQuizGenerating] = useState(false);
+  const [showQuizProgress, setShowQuizProgress] = useState(false);
 
   const [activeTab, setActiveTab] = useState<Tab>("quizzes");
   const [quizzes, setQuizzes] = useState<QuizItem[]>([]);
@@ -38,6 +43,44 @@ export default function DocDetailsPage() {
   const [cards, setCards] = useState<{ id: number; front: string; back: string }[]>([]);
   const [flippedById, setFlippedById] = useState<Record<number, boolean>>({});
 
+  const [summaryEverLoaded, setSummaryEverLoaded] = useState(false);
+  const [flashcardsEverLoaded, setFlashcardsEverLoaded] = useState(false);
+
+  
+  // Sync activeTab with the ?tab= query param if present
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tab = params.get("tab");
+
+    if (tab === "summary" || tab === "flashcards" || tab === "quizzes") {
+      setActiveTab(tab as Tab);
+    }
+  }, [location.search]);
+
+  useEffect(() => {
+    if (!docId || Number.isNaN(docId)) return;
+
+    if (activeTab === "summary") {
+      // Auto-load summary once when you first land on the Summary tab
+      if (!summaryEverLoaded && !summaryLoading) {
+        loadSummaryIfNeeded();
+      }
+    } else if (activeTab === "flashcards") {
+      // Auto-load flashcards once when you first land on the Flashcards tab
+      if (!flashcardsEverLoaded && !flashLoading) {
+        loadFlashcardSets();
+      }
+    }
+    // Quizzes tab already has its own loader
+  }, [
+    activeTab,
+    docId,
+    summaryEverLoaded,
+    summaryLoading,
+    flashcardsEverLoaded,
+    flashLoading,
+  ]);
+
 
   useEffect(() => {
     if (!docId || Number.isNaN(docId)) return;
@@ -48,6 +91,53 @@ export default function DocDetailsPage() {
       .catch(() => setQuizzes([]))
       .finally(() => setLoading(false));
   }, [docId]);
+
+  async function refreshQuizzes() {
+    if (!docId || Number.isNaN(docId)) return;
+    setLoading(true);
+    try {
+      const { data } = await api.get("/api/quizzes/mine", {
+        params: { document_id: docId },
+      });
+      setQuizzes(data.items || []);
+    } catch {
+      setQuizzes([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    refreshQuizzes();
+  }, [docId]);
+
+  async function generateQuizForDoc() {
+    if (!docId || Number.isNaN(docId)) return;
+    setQuizGenerating(true);
+    setShowQuizProgress(true);
+    try {
+      const { data } = await api.post("/api/quizzes/generate", {
+        document_id: docId,
+        title: "Auto Quiz",
+        n: 5,
+      });
+      // Refresh the list so the new quiz appears in the tab
+      await refreshQuizzes();
+      // Optionally navigate straight to the quiz:
+      // nav(`/quiz?quizId=${data.quiz_id}`);
+    } catch (e: any) {
+      const status = e?.response?.status;
+      const msg = e?.response?.data?.error || "Failed to generate quiz";
+      if (status === 410) {
+        alert(`${msg}\n\nTip: Re-upload this document and try again.`);
+      } else {
+        alert(msg);
+      }
+    } finally {
+      setQuizGenerating(false);
+      setShowQuizProgress(false);
+    }
+  }
 
   async function viewAttempts(quizId: number) {
     const { data } = await api.get(`/api/quizzes/${quizId}/attempts`);
@@ -76,8 +166,10 @@ export default function DocDetailsPage() {
       }
     } finally {
       setSummaryLoading(false);
+      setSummaryEverLoaded(true);   // <-- mark that we've attempted at least once
     }
   }
+
 
   async function generateSummary() {
     if (!docId || Number.isNaN(docId)) return;
@@ -108,8 +200,10 @@ export default function DocDetailsPage() {
       setFlashcardSets([]);
     } finally {
       setFlashLoading(false);
+      setFlashcardsEverLoaded(true);  // <-- mark one-time load attempt
     }
   }
+
 
   async function loadSetCards(setId: number) {
     setFlashLoading(true);
@@ -212,20 +306,40 @@ export default function DocDetailsPage() {
 
       {/* Tab content */}
       {activeTab === "quizzes" && (
-        <div>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-gray-700">
+              {quizzes.length
+                ? `You have ${quizzes.length} quiz${quizzes.length > 1 ? "zes" : ""} for this document.`
+                : "No quizzes yet for this document."}
+            </div>
+            <button
+              onClick={generateQuizForDoc}
+              disabled={quizGenerating}
+              className="px-4 py-2 bg-emerald-600 text-white text-sm rounded disabled:opacity-50 hover:bg-emerald-700"
+            >
+              {quizGenerating ? "Generating…" : quizzes.length ? "Generate another quiz" : "Generate first quiz"}
+            </button>
+          </div>
+
           {loading ? (
             <div>Loading quizzes…</div>
           ) : !quizzes.length ? (
-            <div>No quizzes for this document yet. Generate one from My Documents.</div>
+            <div className="text-sm text-gray-500">
+              After you generate a quiz, it will appear here.
+            </div>
           ) : (
-            <div className="grid gap-3">
-              {quizzes.map((q) => (
+            <div className="space-y-2">
+              {quizzes.map((q, idx) => (
                 <div
                   key={q.quiz_id}
-                  className="rounded border bg-white p-4 flex items-center justify-between"
+                  className="rounded border bg-white p-3 flex items-center justify-between"
                 >
                   <div>
-                    <div className="font-medium">{q.title}</div>
+                    <div className="font-medium">
+                      {/* Point 4: show Quiz 1 / Quiz 2 instead of Auto Quiz */}
+                      {`Quiz ${idx + 1}`}
+                    </div>
                     <div className="text-xs text-gray-500">
                       {new Date(q.created_at).toLocaleString()} • Attempts: {q.attempts}
                     </div>
@@ -233,13 +347,13 @@ export default function DocDetailsPage() {
                   <div className="flex gap-2">
                     <button
                       onClick={() => nav(`/quiz?quizId=${q.quiz_id}`)}
-                      className="px-3 py-1 bg-blue-600 text-white rounded"
+                      className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
                     >
                       Open
                     </button>
                     <button
                       onClick={() => viewAttempts(q.quiz_id)}
-                      className="px-3 py-1 bg-gray-200 rounded"
+                      className="px-3 py-1 border border-gray-300 text-xs rounded hover:bg-gray-100"
                     >
                       Attempts
                     </button>
@@ -396,6 +510,19 @@ export default function DocDetailsPage() {
             {summaryText ? "Regenerate summary" : "Generate summary"}
           </button>
         </div>
+      )}
+
+      {showQuizProgress && (
+        <ProgressOverlay
+          title="Generating your quiz"
+          messages={[
+            "Extracting content…",
+            "Identifying key concepts…",
+            "Formulating questions…",
+            "Balancing distractors…",
+            "Finalizing quiz…",
+          ]}
+        />
       )}
 
     </div>
