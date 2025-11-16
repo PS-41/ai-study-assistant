@@ -3,7 +3,7 @@ from flask import Blueprint, request, jsonify, g
 from backend.db import get_db
 from backend.models import Document, Summary
 from backend.services.extract import read_document_text
-from backend.services.llm import llm_complete
+from backend.services.generate import generate_summary_from_source
 from backend.utils_auth import auth_required
 
 bp = Blueprint("summaries", __name__)
@@ -18,6 +18,7 @@ def _load_doc_for_user(doc_id: int):
     if doc.user_id is not None and doc.user_id != getattr(g, "user_id", None):
         return None, ("forbidden", 403)
     return doc, None
+
 
 @bp.get("/<int:document_id>")
 @auth_required
@@ -38,6 +39,7 @@ def get_summary(document_id):
         "created_at": s.created_at.isoformat() if s.created_at else None,
     })
 
+
 @bp.post("/generate")
 @auth_required
 def generate_summary():
@@ -57,24 +59,8 @@ def generate_summary():
     if not source or len(source.split()) < 40:
         return jsonify({"error": "not enough text to summarize"}), 400
 
-    # Prompt for the LLM (works with both Ollama/OpenRouter)
-    prompt = f"""
-You are helping a student study from lecture materials.
-
-Source text:
-\"\"\"
-{source}
-\"\"\"
-
-Write a concise summary for this document suitable for quick revision:
-- 1-2 short paragraphs giving the big picture.
-- Then 3-6 bullet points with key ideas or facts.
-- Use simple language, no flowery writing.
-- Do not mention that you are an AI.
-"""
-
     try:
-        text = llm_complete(prompt=prompt, max_tokens=600, temperature=0.25)
+        text = generate_summary_from_source(source)
     except Exception as e:
         return jsonify({"error": f"summary generation failed: {e}"}), 500
 

@@ -1,11 +1,17 @@
+# backend/services/generate.py
 from typing import List, Dict
 import re
-from backend.services.extract import read_document_text
-from backend.services.llm import llm_complete
 import os
 import time
 
+from backend.services.extract import read_document_text
+from backend.services.llm import llm_complete
+
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
+
+# ============================
+# MCQ GENERATION
+# ============================
 
 SYSTEM_HINT = (
     "You are a precise and helpful assistant that writes clear multiple-choice questions (MCQs) "
@@ -18,8 +24,8 @@ SYSTEM_HINT = (
 PROMPT_TEMPLATE = """
 {system_hint}
 
-Source (trimmed):
-\"\"\"
+Source text:
+\"\"\" 
 {source}
 \"\"\"
 
@@ -71,26 +77,37 @@ def parse_mcqs(raw: str) -> List[Dict]:
     """
     if not raw:
         return []
-    # Normalize endings/whitespace
     text = raw.strip()
 
     out: List[Dict] = []
     for m in _Q_BLOCK.finditer(text):
-        q = m.group("prompt").strip()
-        opts = [m.group("A").strip(), m.group("B").strip(), m.group("C").strip(), m.group("D").strip()]
+        prompt = m.group("prompt").strip()
+        opts = [
+            m.group("A").strip(),
+            m.group("B").strip(),
+            m.group("C").strip(),
+            m.group("D").strip(),
+        ]
         ans_letter = m.group("ans").strip().upper()
-        explanation = re.sub(r"\s+\Z", "", m.group("exp").strip())
+
+        # Explanation may be missing; make this robust
+        exp_raw = m.group("exp") or ""
+        explanation = re.sub(r"\s+\Z", "", exp_raw).strip() if exp_raw else ""
 
         if len(opts) != 4 or ans_letter not in ("A", "B", "C", "D"):
             continue
+
         answer_text = opts[ord(ans_letter) - ord("A")]
-        out.append({
-            "prompt": q,
-            "options": opts,
-            "answer": answer_text,
-            "explanation": explanation
-        })
+        out.append(
+            {
+                "prompt": prompt,
+                "options": opts,
+                "answer": answer_text,
+                "explanation": explanation,
+            }
+        )
     return out
+
 
 def generate_mcqs_from_document(filename: str, n: int = 5, model: str = None) -> List[Dict]:
     # Keep source short enough for small models, but with enough signal
@@ -101,18 +118,16 @@ def generate_mcqs_from_document(filename: str, n: int = 5, model: str = None) ->
     prompt = PROMPT_TEMPLATE.format(system_hint=SYSTEM_HINT, source=source, n=n)
 
     max_retries = 5
-    # Exponential backoff: 0s, 1s, 2s, 4s, 8s
+    # Exponential backoff: 1s, 2s, 4s, 8s, 16s (after failures)
     for attempt in range(1, max_retries + 1):
         try:
-            # Optional: add stop sequences to reduce trailing chatter
             raw = llm_complete(
-                prompt=prompt, 
-                temperature=0.2, 
-                max_tokens=1200
+                prompt=prompt,
+                temperature=0.2,
+                max_tokens=1200,
             )
-        except Exception as e:
+        except Exception:
             if attempt == max_retries:
-                # log/raise in logger if we have one
                 return []
             time.sleep(2 ** (attempt - 1))
             continue
@@ -121,11 +136,103 @@ def generate_mcqs_from_document(filename: str, n: int = 5, model: str = None) ->
         if mcqs:
             return mcqs[:n]
 
-        # If parsing failed, backoff and retry. Log last raw only on final failure.
         if attempt == max_retries:
-            # Can optionally persist `raw` to /tmp or DB for debugging.
-            # with open("/tmp/last_bad_mcq.txt","w") as fh: fh.write(raw)
             return []
         time.sleep(2 ** (attempt - 1))
 
     return []
+
+# ============================
+# FLASHCARD GENERATION
+# ============================
+
+FLASHCARD_PROMPT_TEMPLATE = """
+You are helping a student study from lecture notes.
+
+Source text:
+\"\"\" 
+{source}
+\"\"\"
+
+Create {n} concise flashcards in the following EXACT format.
+Each card must be 1–2 short lines on the front and 1–3 short lines on the back.
+
+For each card:
+
+Q: <front side text>
+A: <back side text>
+
+---
+
+Do not include any other text before or after the cards.
+Do not number the cards. Just repeat the pattern above {n} times.
+"""
+
+# same pattern as you had in routes_flashcards.py
+_FLASHCARD_BLOCK = re.compile(
+    r"Q:\s*(.+?)\s*A:\s*(.+?)(?=\nQ:|\Z)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+def parse_flashcards(raw: str) -> List[Dict[str, str]]:
+    """
+    Parse multiple flashcards from text in this pattern:
+
+    Q: <front>
+    A: <back>
+
+    Q: <front2>
+    A: <back2>
+    ...
+    """
+    if not raw:
+        return []
+
+    text = raw.replace("\r\n", "\n")
+    cards: List[Dict[str, str]] = []
+
+    for m in _FLASHCARD_BLOCK.finditer(text):
+        front = m.group(1).strip()
+        back = m.group(2).strip()
+        if front and back:
+            cards.append({"front": front, "back": back})
+
+    return cards
+
+
+def generate_flashcards_from_source(source: str, n: int = 12) -> List[Dict[str, str]]:
+    """
+    Given cleaned source text, call the LLM and parse it into a list of flashcards.
+    The caller (route) is responsible for checking 'not enough text' and HTTP codes.
+    """
+    prompt = FLASHCARD_PROMPT_TEMPLATE.format(source=source, n=n)
+    raw = llm_complete(prompt=prompt, max_tokens=800, temperature=0.25)
+    return parse_flashcards(raw)
+
+# ============================
+# SUMMARY GENERATION
+# ============================
+
+SUMMARY_PROMPT_TEMPLATE = """
+You are helping a student study from lecture materials.
+
+Source text:
+\"\"\" 
+{source}
+\"\"\"
+
+Write a concise summary for this document suitable for quick revision:
+- 1–2 short paragraphs giving the big picture.
+- Then 3–6 bullet points with key ideas or facts.
+- Use simple language, no flowery writing.
+- Do not mention that you are an AI.
+"""
+
+def generate_summary_from_source(source: str) -> str:
+    """
+    Given cleaned source text, call the LLM and return a summary string.
+    The caller (route) is responsible for checking 'not enough text' and HTTP codes.
+    """
+    prompt = SUMMARY_PROMPT_TEMPLATE.format(source=source)
+    text = llm_complete(prompt=prompt, max_tokens=600, temperature=0.25)
+    return (text or "").strip()

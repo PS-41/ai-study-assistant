@@ -1,10 +1,9 @@
 # backend/routes_flashcards.py
-import re
 from flask import Blueprint, request, jsonify, g
 from backend.db import get_db
 from backend.models import Document, FlashcardSet, Flashcard
 from backend.services.extract import read_document_text
-from backend.services.llm import llm_complete
+from backend.services.generate import generate_flashcards_from_source
 from backend.utils_auth import auth_required
 
 bp = Blueprint("flashcards", __name__)
@@ -19,36 +18,6 @@ def _load_doc_for_user(doc_id: int):
     if doc.user_id is not None and doc.user_id != getattr(g, "user_id", None):
         return None, ("forbidden", 403)
     return doc, None
-
-
-def _parse_flashcards(raw: str):
-    """
-    Parse multiple flashcards from text in this pattern:
-
-    Q: <front>
-    A: <back>
-
-    Q: <front2>
-    A: <back2>
-    ...
-
-    We do NOT rely on '---' separators; we just look for repeated Q:/A: pairs.
-    """
-    text = raw.replace("\r\n", "\n")
-
-    pattern = re.compile(
-        r"Q:\s*(.+?)\s*A:\s*(.+?)(?=\nQ:|\Z)",
-        re.IGNORECASE | re.DOTALL,
-    )
-
-    cards = []
-    for m in pattern.finditer(text):
-        front = m.group(1).strip()
-        back = m.group(2).strip()
-        if front and back:
-            cards.append({"front": front, "back": back})
-
-    return cards
 
 
 @bp.get("/")
@@ -99,7 +68,12 @@ def get_set_cards(set_id):
     if s.user_id is not None and s.user_id != getattr(g, "user_id", None):
         return jsonify({"error": "forbidden"}), 403
 
-    cards = db.query(Flashcard).filter_by(set_id=set_id).order_by(Flashcard.id.asc()).all()
+    cards = (
+        db.query(Flashcard)
+        .filter_by(set_id=set_id)
+        .order_by(Flashcard.id.asc())
+        .all()
+    )
     return jsonify({
         "set_id": s.id,
         "title": s.title,
@@ -138,34 +112,11 @@ def generate_set():
     if not source or len(source.split()) < 40:
         return jsonify({"error": "not enough text to generate flashcards"}), 400
 
-    prompt = f"""
-You are helping a student study from lecture notes.
-
-Source text:
-\"\"\"
-{source}
-\"\"\"
-
-Create {n} concise flashcards in the following EXACT format.
-Each card must be 1-2 short lines on front and 1-3 short lines on back.
-
-For each card:
-
-Q: <front side text>
-A: <back side text>
-
----
-
-Do not include any other text before or after the cards.
-Do not number the cards. Just repeat the pattern above {n} times.
-"""
-
     try:
-        raw = llm_complete(prompt=prompt, max_tokens=800, temperature=0.25)
+        cards = generate_flashcards_from_source(source, n)
     except Exception as e:
         return jsonify({"error": f"flashcard generation failed: {e}"}), 500
 
-    cards = _parse_flashcards(raw)
     if not cards:
         return jsonify({"error": "no valid flashcards parsed from model output"}), 500
 
