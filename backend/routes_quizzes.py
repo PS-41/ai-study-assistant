@@ -65,7 +65,9 @@ def get_quiz(quiz_id):
             "id": q.id,
             "type": q.qtype,
             "prompt": q.prompt,
-            "options": q.options.split("|||")
+            "options": q.options.split("|||"),
+            "answer": q.answer,
+            "explanation": q.explanation or ""
         } for q in qs]
     })
 
@@ -169,6 +171,62 @@ def quiz_attempts(quiz_id):
             "created_at": a.created_at.isoformat()
         } for a in atts.all()]
     })
+
+@bp.get("/<int:quiz_id>/attempts/<int:attempt_id>")
+@auth_required
+def attempt_detail(quiz_id, attempt_id):
+    """
+    Return a single attempt with per-question user answers and correctness.
+    Only allowed if the quiz/document belongs to the current user (or legacy NULL owner).
+    """
+    db = get_db()
+
+    # 1) Fetch quiz + ensure it exists
+    quiz = db.query(Quiz).filter_by(id=quiz_id).first()
+    if not quiz:
+        return jsonify({"error": "quiz not found"}), 404
+
+    # 2) Ownership check via the underlying document
+    doc = db.query(Document).filter_by(id=quiz.document_id).first()
+    if doc and doc.user_id and doc.user_id != g.user_id:
+        return jsonify({"error": "forbidden"}), 403
+
+    # 3) Fetch attempt & ensure it belongs to this quiz
+    att = db.query(Attempt).filter_by(id=attempt_id, quiz_id=quiz_id).first()
+    if not att:
+        return jsonify({"error": "attempt not found"}), 404
+
+    # 4) Fetch all questions for this quiz
+    questions = db.query(Question).filter_by(quiz_id=quiz_id).all()
+    q_by_id = {q.id: q for q in questions}
+
+    # 5) Fetch all answers for this attempt
+    ans_rows = db.query(AttemptAnswer).filter_by(attempt_id=attempt_id).all()
+
+    items = []
+    for ar in ans_rows:
+        q = q_by_id.get(ar.question_id)
+        if not q:
+            continue
+        opts = q.options.split("|||")
+        items.append({
+            "question_id": q.id,
+            "prompt": q.prompt,
+            "options": opts,
+            "correct_answer": q.answer,
+            "explanation": q.explanation or "",
+            "user_answer": ar.user_answer,
+            "is_correct": ar.is_correct,
+        })
+
+    return jsonify({
+        "quiz_id": quiz_id,
+        "attempt_id": att.id,
+        "score_pct": att.score_pct,
+        "created_at": att.created_at.isoformat() if att.created_at else None,
+        "answers": items,
+    })
+
 
 @bp.get("/<int:quiz_id>/answers")
 @auth_required

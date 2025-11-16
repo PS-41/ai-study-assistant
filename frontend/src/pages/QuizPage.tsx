@@ -17,11 +17,25 @@ type A = {
   explanation: string;
 };
 
+type AttemptAnswerDto = {
+  question_id: number;
+  prompt: string;
+  options: string[];
+  correct_answer: string;
+  explanation: string;
+  user_answer: string;
+  is_correct: boolean;
+};
+
 export default function QuizPage() {
   const loc = useLocation();
   const nav = useNavigate();
   const params = useMemo(() => new URLSearchParams(loc.search), [loc.search]);
+
   const quizId = Number(params.get("quizId"));
+  const attemptIdParam = params.get("attemptId");
+  const attemptId = attemptIdParam ? Number(attemptIdParam) : null;
+  const isReplay = !!attemptId;
 
   const [loading, setLoading] = useState(true);
   const [qs, setQs] = useState<Q[]>([]);
@@ -29,35 +43,118 @@ export default function QuizPage() {
   const [submitting, setSubmitting] = useState(false);
   const [score, setScore] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
-  const [resultDetails, setResultDetails] = useState<Record<number, {is_correct:boolean; user_answer:string}>>({});
+  const [resultDetails, setResultDetails] = useState<
+    Record<number, { is_correct: boolean; user_answer: string }>
+  >({});
   const [resultOpen, setResultOpen] = useState(false);
-  const [result, setResult] = useState<{correct:number; total:number; pct:number} | null>(null);
+  const [result, setResult] = useState<{
+    correct: number;
+    total: number;
+    pct: number;
+  } | null>(null);
 
-  // Answers state
+  // Answers state (for "View answers")
   const [showAnswers, setShowAnswers] = useState(false);
   const [answersLoading, setAnswersLoading] = useState(false);
-  const [answers, setAnswers] = useState<Record<number, A>>({}); // keyed by question id  
+  const [answers, setAnswers] = useState<Record<number, A>>({}); // keyed by question id
 
   useEffect(() => {
-    if (!quizId) return;
-    setLoading(true);
-    api
-      .get(`/api/quizzes/${quizId}`)
-      .then(({ data }) => {
-        setQs(data.questions || []);
-        setSel({});
-        setScore(null);
-        setShowAnswers(false);
-        setAnswers({});
-      })
-      .catch(() => {
-        alert("Quiz not found.");
-        nav("/");
-      })
-      .finally(() => setLoading(false));
-  }, [quizId, nav]);
+    if (!quizId) {
+      setLoading(false);
+      return;
+    }
+
+    async function load() {
+      setLoading(true);
+      try {
+        if (isReplay && attemptId) {
+          // -------- REPLAY MODE: load full quiz + specific attempt --------
+
+          // 1) Always load the full quiz questions so we show ALL questions
+          const quizRes = await api.get(`/api/quizzes/${quizId}`);
+          const questions: Q[] = quizRes.data.questions || [];
+          setQs(questions);
+
+          // 2) Then load this specific attempt’s answers
+          const { data } = await api.get(
+            `/api/quizzes/${quizId}/attempts/${attemptId}`
+          );
+
+          const ansList: AttemptAnswerDto[] = data.answers || [];
+
+          // Pre-fill selected answers and correctness map
+          const selMap: Record<number, string> = {};
+          const detailsMap: Record<
+            number,
+            { is_correct: boolean; user_answer: string }
+          > = {};
+
+          ansList.forEach((a) => {
+            selMap[a.question_id] = a.user_answer;
+            detailsMap[a.question_id] = {
+              is_correct: !!a.is_correct,
+              user_answer: String(a.user_answer || ""),
+            };
+          });
+
+          setSel(selMap);
+          setResultDetails(detailsMap);
+          setSubmitted(true); // so we show correctness highlights
+          setScore(data.score_pct ?? null);
+
+          // We keep your existing result calculation for now
+          const total = ansList.length || 0;
+          const correctCount = ansList.filter((a) => a.is_correct).length;
+          setResult(
+            total
+              ? {
+                  correct: correctCount,
+                  total,
+                  pct: data.score_pct ?? Math.round((correctCount / total) * 100),
+                }
+              : null
+          );
+
+          // Do NOT auto-open result modal in replay mode
+          setResultOpen(false);
+          setShowAnswers(false);
+          setAnswers({});
+        } else {
+          // -------- NORMAL MODE: load quiz questions --------
+          api
+            .get(`/api/quizzes/${quizId}`)
+            .then(({ data }) => {
+              setQs(data.questions || []);
+              setSel({});
+              setScore(null);
+              setShowAnswers(false);
+              setAnswers({});
+              setSubmitted(false);
+              setResultDetails({});
+              setResult(null);
+              setResultOpen(false);
+            })
+            .catch(() => {
+              alert("Quiz not found.");
+              nav("/");
+            });
+        }
+      } catch (e: any) {
+        alert(e?.response?.data?.error || "Failed to load quiz.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    load();
+  }, [quizId, nav, isReplay, attemptId]);
 
   async function submit() {
+    if (isReplay) {
+      // Replay is read-only; don't allow submitting again
+      return;
+    }
+
     setSubmitting(true);
     try {
       const payload = {
@@ -69,12 +166,20 @@ export default function QuizPage() {
       };
       const { data } = await api.post("/api/quizzes/attempt", payload);
       setScore(data.score_pct);
-      setResult({ correct: data.correct, total: data.total, pct: data.score_pct });
+      setResult({
+        correct: data.correct,
+        total: data.total,
+        pct: data.score_pct,
+      });
       setResultOpen(true); // open modal
-      // Map details: question_id -> {is_correct, user_answer}
-      const map: Record<number, {is_correct:boolean; user_answer:string}> = {};
+
+      const map: Record<number, { is_correct: boolean; user_answer: string }> =
+        {};
       (data.details || []).forEach((d: any) => {
-        map[d.question_id] = { is_correct: !!d.is_correct, user_answer: String(d.user_answer || "") };
+        map[d.question_id] = {
+          is_correct: !!d.is_correct,
+          user_answer: String(d.user_answer || ""),
+        };
       });
       setResultDetails(map);
       setSubmitted(true);
@@ -88,7 +193,7 @@ export default function QuizPage() {
   async function toggleAnswers() {
     const next = !showAnswers;
     setShowAnswers(next);
-    if (!next) return; // hiding -> nothing to fetch
+    if (!next) return; // hiding → nothing to fetch
 
     // fetch once
     if (Object.keys(answers).length > 0) return;
@@ -96,7 +201,6 @@ export default function QuizPage() {
     setAnswersLoading(true);
     try {
       const { data } = await api.get(`/api/quizzes/${quizId}/answers`);
-      // Shape into a dict keyed by qid
       const dict: Record<number, A> = {};
       for (const a of (data.answers || []) as A[]) dict[a.id] = a;
       setAnswers(dict);
@@ -126,13 +230,29 @@ export default function QuizPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Quiz</h2>
+        <div>
+          <h2 className="text-xl font-semibold">
+            Quiz{isReplay ? " (view attempt)" : ""}
+          </h2>
+          {isReplay && result && (
+            <div className="text-xs text-gray-500">
+              Viewing a past attempt: {result.correct} / {result.total} (
+              {result.pct}%)
+            </div>
+          )}
+        </div>
         <div className="flex gap-2">
           <button
             onClick={toggleAnswers}
             className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
           >
             {showAnswers ? "Hide answers" : "View answers"}
+          </button>
+          <button
+            onClick={() => nav(-1)}
+            className="px-3 py-1 border rounded text-sm hover:bg-gray-50"
+          >
+            Back
           </button>
         </div>
       </div>
@@ -148,6 +268,11 @@ export default function QuizPage() {
           const chosen = sel[q.id] || "";
           const a = answers[q.id];
           const reveal = showAnswers && !!a;
+
+          const detail = resultDetails[q.id];
+          const chosenIsCorrect = submitted && detail?.is_correct === true;
+          const chosenIsWrong = submitted && detail?.is_correct === false;
+
           return (
             <div key={q.id} className="rounded border bg-white p-4">
               <div className="font-medium mb-2">
@@ -160,31 +285,57 @@ export default function QuizPage() {
                   // For “View Answers” mode (show all correct answers)
                   const isCorrectReveal = reveal && a?.answer === opt;
 
-                  // When user has submitted, mark their chosen correct option green
+                  // After submit, chosen correct → green
                   const chosenCorrectAfterSubmit =
-                    submitted && isChosen && resultDetails[q.id]?.is_correct === true;
+                    chosenIsCorrect && isChosen;
+
+                  // NEW: in normal mode, chosen wrong after submit → red
+                  const wrongAfterSubmit =
+                    !isReplay && chosenIsWrong && isChosen;
+
+                  // In REPLAY mode, chosen wrong → red (even without View Answers)
+                  const wrongInReplay =
+                    isReplay && chosenIsWrong && isChosen;
+
+                  const classes = [
+                    "flex items-center gap-2 rounded border p-2 cursor-pointer",
+                    // green if correct (either revealed or correct chosen after submit)
+                    isCorrectReveal ? "border-emerald-500 bg-emerald-50" : "",
+                    chosenCorrectAfterSubmit
+                      ? "border-emerald-500 bg-emerald-50"
+                      : "",
+                    // red when:
+                    // - in View Answers + chosen wrong, OR
+                    // - in replay mode and chosen wrong, OR
+                    // - in normal mode after submit and chosen wrong
+                    (!isCorrectReveal && reveal && isChosen) ||
+                    wrongInReplay ||
+                    wrongAfterSubmit
+                      ? "border-red-400 bg-red-50"
+                      : "",
+                  ].join(" ");
 
                   return (
-                    <label
-                      key={idx}
-                      className={[
-                        "flex items-center gap-2 rounded border p-2 cursor-pointer",
-                        // Green if correct (either revealed or correct chosen after submit)
-                        isCorrectReveal ? "border-emerald-500 bg-emerald-50" : "",
-                        chosenCorrectAfterSubmit ? "border-emerald-500 bg-emerald-50" : "",
-                        // Red only when in “View Answers” mode and chosen wrong
-                        !isCorrectReveal && reveal && isChosen
-                          ? "border-red-400 bg-red-50"
-                          : "",
-                      ].join(" ")}
-                    >
+                    <label key={idx} className={classes}>
                       <input
                         type="radio"
                         name={`q_${q.id}`}
                         checked={isChosen}
-                        onChange={() =>
-                          setSel((prev) => ({ ...prev, [q.id]: opt }))
-                        }
+                        disabled={isReplay} // still read-only in replay mode
+                        onChange={() => {
+                          if (isReplay) return;
+
+                          // Update selection
+                          setSel((prev) => ({ ...prev, [q.id]: opt }));
+
+                          // If we already submitted, changing this answer should clear
+                          // correctness info for JUST this question so colors reset.
+                          setResultDetails((prev) => {
+                            if (!submitted) return prev;
+                            const { [q.id]: _ignored, ...rest } = prev;
+                            return rest;
+                          });
+                        }}
                       />
                       <span>{opt}</span>
                     </label>
@@ -192,7 +343,7 @@ export default function QuizPage() {
                 })}
               </div>
 
-              {reveal && (
+              {reveal && a && (
                 <div className="mt-3 text-sm">
                   <div>
                     <span className="font-medium">Answer: </span>
@@ -211,16 +362,18 @@ export default function QuizPage() {
         })}
       </div>
 
-      <div className="pt-2">
-        <button
-          onClick={submit}
-          disabled={submitting}
-          className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
-        >
-          {submitting ? "Submitting..." : "Submit answers"}
-        </button>
+      <div className="pt-2 flex items-center gap-3">
+        {!isReplay && (
+          <button
+            onClick={submit}
+            disabled={submitting}
+            className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
+          >
+            {submitting ? "Submitting..." : "Submit answers"}
+          </button>
+        )}
         {answersLoading && (
-          <span className="ml-3 text-sm text-gray-600">Loading answers…</span>
+          <span className="text-sm text-gray-600">Loading answers…</span>
         )}
       </div>
 
@@ -241,7 +394,9 @@ export default function QuizPage() {
               <div className="text-2xl font-bold">
                 {result.correct} / {result.total}
               </div>
-              <div className="text-sm text-gray-600">Score: {result.pct}%</div>
+              <div className="text-sm text-gray-600">
+                Score: {result.pct}%
+              </div>
             </div>
             <div className="mt-5 flex justify-end gap-2">
               <button
@@ -264,7 +419,6 @@ export default function QuizPage() {
           </div>
         </div>
       )}
-
     </div>
   );
 }
