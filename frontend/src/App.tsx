@@ -6,6 +6,7 @@ import AuthSignup from "./pages/AuthSignup";
 import DocsPage from "./pages/DocsPage";
 import QuizzesPage from "./pages/QuizzesPage";
 import DocDetailsPage from "./pages/DocDetailsPage";
+import CoursesPage from "./pages/CoursesPage";
 import { useEffect, useState } from "react";
 import { api } from "./lib/api";
 
@@ -36,6 +37,7 @@ export default function App() {
             <Link to="/upload" className="hover:text-blue-600">Upload</Link>
             {me && (
               <>
+                <Link to="/courses" className="hover:text-blue-600">My Courses</Link>
                 <Link to="/docs" className="hover:text-blue-600">My Documents</Link>
                 <Link to="/quizzes" className="hover:text-blue-600">My Quizzes</Link>
               </>
@@ -65,6 +67,7 @@ export default function App() {
           <Route path="/docs" element={<DocsPage />} />
           <Route path="/docs/:id" element={<DocDetailsPage />} />
           <Route path="/quizzes" element={<QuizzesPage />} />
+          <Route path="/courses" element={<CoursesPage />} />
         </Routes>
       </main>
 

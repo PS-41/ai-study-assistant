@@ -27,7 +27,32 @@ def init_db(app):
 
     # Create all tables for models that subclass Base
     Base.metadata.create_all(_engine)
-    ensure_optional_user_id_column(_engine)
+
+    # Apply schema migrations (add missing columns, etc.)
+    run_schema_migrations(_engine)
+    # ensure_optional_user_id_column(_engine)
+
+def run_schema_migrations(engine):
+    """
+    Runs simple SQLite migrations by checking for missing columns and adding them.
+    This keeps DB backward-compatible without manual SQL.
+    """
+    with engine.connect() as conn:
+        # Inspect columns in documents table
+        cols = conn.execute(text("PRAGMA table_info(documents)")).fetchall()
+        col_names = {c[1] for c in cols}
+
+        # 1. user_id column
+        if "user_id" not in col_names:
+            conn.execute(text("ALTER TABLE documents ADD COLUMN user_id INTEGER NULL"))
+
+        # 2. course_id column
+        if "course_id" not in col_names:
+            conn.execute(text("ALTER TABLE documents ADD COLUMN course_id INTEGER NULL"))
+
+        # 3. topic_id column
+        if "topic_id" not in col_names:
+            conn.execute(text("ALTER TABLE documents ADD COLUMN topic_id INTEGER NULL"))
 
 def get_db():
     """Return a request-scoped SQLAlchemy session."""
@@ -40,16 +65,3 @@ def close_db(e=None):
     db = g.pop("db", None)
     if db is not None:
         db.close()
-
-def ensure_optional_user_id_column(engine):
-    """
-    Add user_id column to documents if it's missing.
-    This keeps DB compatible with older versions.
-    """
-    # SQLite pragma to inspect table columns
-    with engine.connect() as conn:
-        cols = conn.execute(text("PRAGMA table_info(documents)")).fetchall()
-        names = {c[1] for c in cols}  # (cid, name, type, notnull, dflt, pk)
-        if "user_id" not in names:
-            conn.execute(text("ALTER TABLE documents ADD COLUMN user_id INTEGER NULL"))
-            # no FK constraint here to keep it simple; logical FK is enough for now

@@ -21,6 +21,11 @@ class Document(Base):
     size = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # Optional organization
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=True)
+    topic_id = Column(Integer, ForeignKey("topics.id"), nullable=True)
+    course = relationship("Course", back_populates="documents")
+    topic = relationship("Topic", back_populates="documents")
 
 class Summary(Base):
     __tablename__ = "summaries"
@@ -89,3 +94,27 @@ class AttemptAnswer(Base):
     question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
     user_answer = Column(Text, nullable=False)
     is_correct = Column(Boolean, default=False)
+
+class Course(Base):
+    __tablename__ = "courses"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    # relationships
+    topics = relationship("Topic", back_populates="course", cascade="all, delete-orphan", lazy="selectin")
+    documents = relationship("Document", back_populates="course", lazy="selectin")
+
+class Topic(Base):
+    __tablename__ = "topics"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    # relationships
+    course = relationship("Course", back_populates="topics")
+    documents = relationship("Document", back_populates="topic", lazy="selectin")

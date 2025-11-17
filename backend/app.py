@@ -11,6 +11,8 @@ from backend.routes_quizzes import bp as quizzes_bp
 from backend.routes_summaries import bp as summaries_bp
 from backend.routes_flashcards import bp as flashcards_bp
 from backend.routes_auth import bp as auth_bp
+from backend.routes_courses import bp as courses_bp
+from backend.routes_topics import bp as topics_bp
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev")
@@ -34,6 +36,8 @@ app.register_blueprint(quizzes_bp, url_prefix="/api/quizzes")
 app.register_blueprint(auth_bp, url_prefix="/api/auth") 
 app.register_blueprint(summaries_bp, url_prefix="/api/summaries")
 app.register_blueprint(flashcards_bp, url_prefix="/api/flashcards")
+app.register_blueprint(courses_bp, url_prefix="/api/courses")
+app.register_blueprint(topics_bp, url_prefix="/api/topics")
 
 if __name__ == "__main__":
     app.run(debug=True)

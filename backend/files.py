@@ -5,7 +5,7 @@ from flask import Blueprint, request, jsonify, g, send_file
 from werkzeug.utils import secure_filename
 
 from backend.db import get_db
-from backend.models import Document
+from backend.models import Document, Course, Topic
 from backend.utils_auth import auth_required
 
 # Reuse the same upload directory as extraction uses
@@ -98,7 +98,18 @@ def my_docs():
     db = get_db()
     q = db.query(Document).filter(
         (Document.user_id == g.user_id) | (Document.user_id.is_(None))
-    ).order_by(Document.created_at.desc()).limit(100)
+    )
+    # NEW: optional filters
+    course_id = request.args.get("course_id", type=int)
+    topic_id = request.args.get("topic_id", type=int)
+
+    if course_id is not None:
+        q = q.filter(Document.course_id == course_id)
+    if topic_id is not None:
+        q = q.filter(Document.topic_id == topic_id)
+    
+    q = q.order_by(Document.created_at.desc()).limit(200)
+
     items = [{
         "id": d.id,
         "original_name": d.original_name,
@@ -106,7 +117,11 @@ def my_docs():
         "mime": d.mime_type,
         "size": d.size,
         "created_at": d.created_at.isoformat(),
-        "owned": (d.user_id == g.user_id)
+        "owned": (d.user_id == g.user_id),
+        "course_id": d.course_id,
+        "course_name": d.course.name if d.course else None,
+        "topic_id": d.topic_id,
+        "topic_name": d.topic.name if d.topic else None
     } for d in q.all()]
     return jsonify({"items": items})
 
@@ -166,3 +181,72 @@ def download_file(doc_id):
         as_attachment=True,
         download_name=doc.original_name or "file"
     )
+
+@bp.post("/<int:doc_id>/assign")
+@auth_required
+def assign_document(doc_id: int):
+    """
+    Assign a document to a course and/or topic.
+
+    JSON body:
+      {
+        "course_id": <int or null>,
+        "topic_id": <int or null>
+      }
+
+    Rules:
+    - document must belong to current user (or legacy NULL-user if you still allow that).
+    - if course_id is not null, it must belong to the current user.
+    - if topic_id is not null, it must belong to that course.
+    """
+    db = get_db()
+
+    doc = db.query(Document).filter_by(id=doc_id).first()
+    if not doc:
+        return jsonify({"error": "document not found"}), 404
+
+    # Ownership check (similar to other places)
+    if doc.user_id is not None and doc.user_id != g.user_id:
+        return jsonify({"error": "forbidden"}), 403
+
+    payload = request.get_json(force=True)
+    course_id = payload.get("course_id")
+    topic_id = payload.get("topic_id")
+
+    course = None
+    topic = None
+
+    # Validate course if provided
+    if course_id is not None:
+        course = (
+            db.query(Course)
+            .filter_by(id=int(course_id), user_id=g.user_id)
+            .first()
+        )
+        if not course:
+            return jsonify({"error": "course not found or not yours"}), 400
+
+    # Validate topic if provided
+    if topic_id is not None:
+        topic = db.query(Topic).filter_by(id=int(topic_id)).first()
+        if not topic:
+            return jsonify({"error": "topic not found"}), 400
+        if course and topic.course_id != course.id:
+            return jsonify({"error": "topic does not belong to course"}), 400
+        # If course not explicitly passed but topic is, infer course
+        if course is None:
+            course = db.query(Course).filter_by(id=topic.course_id, user_id=g.user_id).first()
+            if not course:
+                return jsonify({"error": "topic's course does not belong to you"}), 400
+
+    # Apply assignment (nullable is allowed)
+    doc.course_id = course.id if course else None if course_id is None else doc.course_id
+    doc.topic_id = topic.id if topic else None if topic_id is None else doc.topic_id
+
+    db.commit()
+
+    return jsonify({
+        "id": doc.id,
+        "course_id": doc.course_id,
+        "topic_id": doc.topic_id,
+    })
