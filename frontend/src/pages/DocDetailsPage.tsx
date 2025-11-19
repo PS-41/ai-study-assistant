@@ -124,7 +124,7 @@ export default function DocDetailsPage() {
       // Refresh the list so the new quiz appears in the tab
       await refreshQuizzes();
       // Optionally navigate straight to the quiz:
-      // nav(`/quiz?quizId=${data.quiz_id}`);
+      nav(`/quiz?quizId=${data.quiz_id}`);
     } catch (e: any) {
       const status = e?.response?.status;
       const msg = e?.response?.data?.error || "Failed to generate quiz";
@@ -338,7 +338,7 @@ export default function DocDetailsPage() {
                   <div>
                     <div className="font-medium">
                       {/* Point 4: show Quiz 1 / Quiz 2 instead of Auto Quiz */}
-                      {`Quiz ${idx + 1}`}
+                      {`Quiz ${quizzes.length - idx}`}
                     </div>
                     <div className="text-xs text-gray-500">
                       {new Date(q.created_at).toLocaleString()} • Attempts: {q.attempts}
