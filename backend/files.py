@@ -7,8 +7,6 @@ from werkzeug.utils import secure_filename
 from backend.db import get_db
 from backend.models import Document, Course, Topic
 from backend.utils_auth import auth_required
-
-# Reuse the same upload directory as extraction uses
 from backend.services.extract import UPLOAD_DIR
 
 bp = Blueprint("files", __name__)
@@ -23,10 +21,27 @@ def upload():
     if not f or not f.filename:
         return jsonify({"error": "empty file"}), 400
 
-    # Keep original name for UI
-    original_name = secure_filename(f.filename)
+    # Robustly handle form data
+    course_id = request.form.get("course_id")
+    topic_id = request.form.get("topic_id")
 
-    # Generate a unique server filename to avoid overwrites
+    # Clean up "undefined"/"null" strings from frontend JS
+    if course_id in ["undefined", "null", ""]: course_id = None
+    if topic_id in ["undefined", "null", ""]: topic_id = None
+
+    db = get_db()
+    
+    # Validate if IDs provided
+    if course_id:
+        c = db.query(Course).filter_by(id=int(course_id), user_id=g.user_id).first()
+        if not c: return jsonify({"error": "invalid course"}), 400
+    if topic_id:
+        t = db.query(Topic).filter_by(id=int(topic_id)).first()
+        if not t: return jsonify({"error": "invalid topic"}), 400
+        if course_id and t.course_id != int(course_id):
+             return jsonify({"error": "topic does not belong to course"}), 400
+
+    original_name = secure_filename(f.filename)
     _, ext = os.path.splitext(original_name)
     unique_name = f"{uuid.uuid4().hex}{ext.lower() or ''}"
 
@@ -39,28 +54,27 @@ def upload():
     except Exception as e:
         return jsonify({"error": f"failed to save file: {e}"}), 500
 
-    db = get_db()
     doc = Document(
-        filename=unique_name,          # server filename (unique)
-        original_name=original_name,   # human-friendly label
+        filename=unique_name,
+        original_name=original_name,
         mime_type=f.mimetype or "application/octet-stream",
         size=size,
+        user_id=g.user_id,
+        course_id=int(course_id) if course_id else None,
+        topic_id=int(topic_id) if topic_id else None
     )
-    # attach current user if column exists
-    try:
-        setattr(doc, "user_id", getattr(g, "user_id", None))
-    except Exception:
-        pass
 
     db.add(doc)
     db.commit()
 
     return jsonify({
         "document_id": doc.id,
-        "filename": doc.filename,           # unique server name
+        "filename": doc.filename,
         "original_name": doc.original_name,
         "mime": doc.mime_type,
-        "size": doc.size
+        "size": doc.size,
+        "course_id": doc.course_id,
+        "topic_id": doc.topic_id
     })
 
 

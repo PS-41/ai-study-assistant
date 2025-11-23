@@ -1,9 +1,23 @@
+// frontend/src/pages/DocsPage.tsx
 import { useEffect, useState } from "react";
-import { api } from "../lib/api";
 import { useNavigate } from "react-router-dom";
+import { api } from "../lib/api";
+import GenerateModal from "../components/GenerateModal";
+import AssignModal from "../components/AssignModal";
 
 const apiOrigin = import.meta.env.DEV ? "http://localhost:5000" : "";
 const apiHref = (path: string) => `${apiOrigin}${path}`;
+
+// --- Icons ---
+const Icons = {
+  FileText: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>,
+  CheckSquare: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>,
+  Square: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>,
+  X: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>,
+  Zap: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>,
+  FolderPlus: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>,
+  ExternalLink: () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+};
 
 type Doc = {
   id: number;
@@ -24,288 +38,215 @@ export default function DocsPage() {
   const [loading, setLoading] = useState(true);
   const nav = useNavigate();
 
-  // NEW: for assignment UI
-  type Course = { id: number; name: string; description?: string | null };
-  type Topic = { id: number; name: string; course_id: number };
-
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [topicsByCourse, setTopicsByCourse] = useState<Record<number, Topic[]>>({});
-  const [assignDocId, setAssignDocId] = useState<number | null>(null);
-  const [assignCourseId, setAssignCourseId] = useState<number | null>(null);
-  const [assignTopicId, setAssignTopicId] = useState<number | null>(null);
-  const [assignSaving, setAssignSaving] = useState(false);
+  // Selection State
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  
+  // Action Modals
+  const [activeGenType, setActiveGenType] = useState<"quiz"|"flashcards"|"summary"|null>(null);
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  
+  // Prompts
+  const [promptMode, setPromptMode] = useState<string|null>(null); 
 
   useEffect(() => {
-    api
-      .get("/api/files/mine")
+    api.get("/api/files/mine")
       .then(({ data }) => setItems(data.items))
       .catch((e: any) => {
-        if (e?.response?.status === 401) {
-          // not logged in
-          setItems([]);
-          nav("/login");
-        } else {
-          setItems([]);
-        }
+        if (e?.response?.status === 401) nav("/login");
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [nav]);
 
-  if (loading) return <div>Loading…</div>;
-  if (!items.length) return <div>No documents yet. Upload one to get started.</div>;
+  const toggleSelection = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
-  async function ensureCoursesLoaded() {
-    if (courses.length > 0) return;
-    try {
-      const { data } = await api.get("/api/courses/mine");
-      setCourses(data.items || []);
-    } catch (e: any) {
-      console.error("Failed to load courses", e);
+  // Triggered by top toolbar buttons
+  const initiateAction = (action: "assign" | "generate") => {
+    if (selectedIds.size > 0) {
+      if (action === "assign") setShowAssignModal(true);
+      else setActiveGenType("quiz"); 
+    } else {
+      setIsSelectMode(true);
+      setPromptMode(action === "assign" ? "Select documents to Assign" : "Select documents to Generate Content");
     }
-  }
+  };
 
-  async function loadTopicsForCourse(courseId: number) {
-    if (topicsByCourse[courseId]) return;
-    try {
-      const { data } = await api.get(`/api/topics/by_course/${courseId}`);
-      setTopicsByCourse(prev => ({
-        ...prev,
-        [courseId]: data.items || [],
-      }));
-    } catch (e: any) {
-      console.error("Failed to load topics", e);
-    }
-  }
-
-  async function openAssign(doc: Doc) {
-    setAssignDocId(doc.id);
-    const initialCourseId = doc.course_id ?? null;
-    const initialTopicId = doc.topic_id ?? null;
-    setAssignCourseId(initialCourseId);
-    setAssignTopicId(initialTopicId);
-    await ensureCoursesLoaded();
-    if (initialCourseId) {
-      await loadTopicsForCourse(initialCourseId);
-    }
-  }
-
-  function closeAssign() {
-    setAssignDocId(null);
-    setAssignCourseId(null);
-    setAssignTopicId(null);
-    setAssignSaving(false);
-  }
-
-  async function saveAssign() {
-    if (!assignDocId) return;
-    setAssignSaving(true);
-    try {
-      const payload: any = {
-        course_id: assignCourseId,
-        topic_id: assignTopicId,
-      };
-      const { data } = await api.post(`/api/files/${assignDocId}/assign`, payload);
-      // Update local state
-      setItems(prev =>
-        prev.map(doc =>
-          doc.id === assignDocId
-            ? {
-                ...doc,
-                course_id: data.course_id,
-                topic_id: data.topic_id,
-                course_name:
-                  data.course_id &&
-                  courses.find(c => c.id === data.course_id)?.name
-                    ? courses.find(c => c.id === data.course_id)!.name
-                    : null,
-                topic_name:
-                  data.topic_id &&
-                  topicsByCourse[data.course_id || assignCourseId || 0]?.find(
-                    t => t.id === data.topic_id
-                  )?.name || null,
-              }
-            : doc
-        )
-      );
-      closeAssign();
-    } catch (e: any) {
-      alert(e?.response?.data?.error || "Failed to assign document");
-      setAssignSaving(false);
-    }
-  }
-
-
+  if (loading) return <div className="p-8 text-gray-500">Loading documents...</div>;
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-semibold">My Documents</h2>
-      <div className="grid gap-3">
-        {items.map((doc) => (
-          <div
-            key={doc.id}
-            className="rounded border bg-white p-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+    <div className="max-w-5xl mx-auto space-y-6 pb-24">
+      {/* Header & Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800">My Documents</h2>
+          <p className="text-sm text-gray-500 mt-1">Manage, organize, and study from your files.</p>
+        </div>
+        
+        {/* Discoverable Actions Toolbar */}
+        <div className="flex items-center gap-2 bg-white p-1.5 border rounded-lg shadow-sm">
+          <button 
+            onClick={() => initiateAction("generate")}
+            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md transition"
           >
-            {/* Left: name + meta */}
-            <div>
-              {/* Clickable name → open PDF in new tab (same as before) */}
-              <a
-                href={apiHref(`/api/files/view/${doc.id}`)}
-                target="_blank"
-                rel="noreferrer"
-                className="font-medium text-blue-600 hover:underline"
-                title="Open PDF in a new tab"
-              >
-                {doc.original_name}
-              </a>
-              <div className="text-xs text-gray-500">
-                {new Date(doc.created_at).toLocaleString()} •{" "}
-                {Math.round(doc.size / 1024)} KB {doc.owned ? "• owned" : ""}
-              </div>
-              {(doc.course_name || doc.topic_name) && (
-                <div className="text-[11px] text-gray-500 mt-1">
-                  {doc.course_name && <span>Course: {doc.course_name}</span>}
-                  {doc.course_name && doc.topic_name && <span> • </span>}
-                  {doc.topic_name && <span>Topic: {doc.topic_name}</span>}
-                </div>
-              )}
-              {/* explicit Open PDF link (optional, but matches what you asked for) */}
-              <div className="text-xs mt-1">
-                <a
-                  href={apiHref(`/api/files/view/${doc.id}`)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-gray-500 hover:text-gray-700 underline"
-                >
-                  Open PDF in new tab
-                </a>
-              </div>
-            </div>
-
-            {/* Right: only three quick actions → open details page with correct tab */}
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() =>
-                  nav(`/docs/${doc.id}?tab=quizzes`, { state: { docName: doc.original_name } })
-                }
-                className="px-3 py-1 border border-gray-300 text-xs rounded hover:bg-gray-100"
-              >
-                Quizzes
-              </button>
-
-              <button
-                onClick={() =>
-                  nav(`/docs/${doc.id}?tab=flashcards`, { state: { docName: doc.original_name } })
-                }
-                className="px-3 py-1 border border-gray-300 text-xs rounded hover:bg-gray-100"
-              >
-                Flashcards
-              </button>
-
-              <button
-                onClick={() =>
-                  nav(`/docs/${doc.id}?tab=summary`, { state: { docName: doc.original_name } })
-                }
-                className="px-3 py-1 border border-gray-300 text-xs rounded hover:bg-gray-100"
-              >
-                Summary
-              </button>
-
-              <button
-                onClick={() => openAssign(doc)}
-                className="px-3 py-1 bg-gray-100 border rounded text-xs hover:bg-gray-200"
-              >
-                Assign
-              </button>
-
-            </div>
-          </div>
-        ))}
+            <Icons.Zap /> Generate
+          </button>
+          <div className="w-px h-5 bg-gray-300"></div>
+          <button 
+            onClick={() => initiateAction("assign")}
+            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md transition"
+          >
+            <Icons.FolderPlus /> Assign
+          </button>
+          <div className="w-px h-5 bg-gray-300"></div>
+          <button
+            onClick={() => {
+              setIsSelectMode(!isSelectMode);
+              if(isSelectMode) { setSelectedIds(new Set()); setPromptMode(null); }
+            }}
+            className={`px-3 py-2 text-sm font-medium rounded-md transition ${isSelectMode ? "bg-gray-100 text-gray-900" : "text-gray-700 hover:bg-gray-50"}`}
+          >
+            {isSelectMode ? "Cancel" : "Select"}
+          </button>
+        </div>
       </div>
-      {assignDocId && (
-        <div className="fixed inset-x-0 bottom-0 z-40 flex justify-center">
-          <div className="mb-4 w-full max-w-xl rounded-2xl border bg-white p-4 shadow-lg">
-            <div className="flex items-center justify-between mb-3">
-              <div className="font-medium text-sm">Assign document</div>
-              <button
-                onClick={closeAssign}
-                className="text-xs text-gray-500 hover:text-gray-700"
-              >
-                ✕
-              </button>
-            </div>
 
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-1">
-                <label className="block text-xs text-gray-600">
-                  Course
-                </label>
-                <select
-                  className="w-full rounded border px-2 py-1 text-sm"
-                  value={assignCourseId ?? ""}
-                  onChange={async e => {
-                    const val = e.target.value;
-                    const cid = val ? Number(val) : null;
-                    setAssignCourseId(cid);
-                    setAssignTopicId(null);
-                    if (cid) {
-                      await loadTopicsForCourse(cid);
-                    }
-                  }}
+      {/* Prompt Banner */}
+      {isSelectMode && promptMode && selectedIds.size === 0 && (
+        <div className="bg-blue-50 border border-blue-100 text-blue-700 px-4 py-3 rounded-lg text-sm flex items-center animate-in fade-in">
+          <span className="mr-2">ℹ️</span> {promptMode}. Click on documents to select them.
+        </div>
+      )}
+
+      {items.length === 0 ? (
+        <div className="text-center py-12 bg-white rounded-lg border border-dashed text-gray-400">
+          No documents found. Upload one to get started.
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <div className="divide-y">
+            {items.map((doc) => {
+              const isSelected = selectedIds.has(doc.id);
+              return (
+                <div 
+                  key={doc.id} 
+                  onClick={() => isSelectMode && toggleSelection(doc.id)}
+                  className={`flex items-center p-4 gap-4 transition-colors cursor-pointer ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
                 >
-                  <option value="">(none)</option>
-                  {courses.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  {/* Selection Box */}
+                  <div className={`flex-shrink-0 ${isSelectMode ? 'w-6 opacity-100' : 'w-0 opacity-0 overflow-hidden'} transition-all duration-200`}>
+                    <button onClick={(e) => { e.stopPropagation(); toggleSelection(doc.id); }} className="text-gray-500 hover:text-blue-600">
+                      {isSelected ? <Icons.CheckSquare /> : <Icons.Square />}
+                    </button>
+                  </div>
 
-              <div className="space-y-1">
-                <label className="block text-xs text-gray-600">
-                  Topic (optional)
-                </label>
-                <select
-                  className="w-full rounded border px-2 py-1 text-sm"
-                  value={assignTopicId ?? ""}
-                  onChange={e => {
-                    const val = e.target.value;
-                    setAssignTopicId(val ? Number(val) : null);
-                  }}
-                  disabled={!assignCourseId}
-                >
-                  <option value="">
-                    {assignCourseId ? "(no topic)" : "Select a course first"}
-                  </option>
-                  {assignCourseId &&
-                    (topicsByCourse[assignCourseId] || []).map(t => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                </select>
-              </div>
-            </div>
+                  {/* Icon */}
+                  <div className="p-2 bg-blue-100 text-blue-600 rounded-lg">
+                    <Icons.FileText />
+                  </div>
 
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                onClick={closeAssign}
-                className="px-3 py-1 text-xs rounded border border-gray-300 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={saveAssign}
-                disabled={assignSaving}
-                className="px-3 py-1 text-xs rounded bg-blue-600 text-white disabled:opacity-50 hover:bg-blue-700"
-              >
-                {assignSaving ? "Saving…" : "Save"}
-              </button>
-            </div>
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-gray-900 truncate">
+                      {doc.original_name}
+                    </div>
+                    <div className="text-xs text-gray-500 flex gap-2 mt-0.5">
+                      <span>{new Date(doc.created_at).toLocaleDateString()}</span>
+                      <span>•</span>
+                      <span>{Math.round(doc.size / 1024)} KB</span>
+                      {doc.course_name && (
+                        <>
+                          <span>•</span>
+                          <span className="bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">{doc.course_name}</span>
+                        </>
+                      )}
+                    </div>
+                    {/* NEW: Explicit "Open PDF" link */}
+                    <a 
+                      href={apiHref(`/api/files/view/${doc.id}`)} 
+                      target="_blank" 
+                      rel="noreferrer"
+                      className="text-xs text-blue-600 hover:underline flex items-center gap-1 mt-1 w-fit"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Icons.ExternalLink /> Open PDF
+                    </a>
+                  </div>
+
+                  {/* Actions (Single Mode) */}
+                  {!isSelectMode && (
+                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 sm:opacity-100 transition-opacity">
+                      <button onClick={(e) => { e.stopPropagation(); nav(`/docs/${doc.id}?tab=quizzes`); }} className="px-3 py-1.5 text-xs border rounded hover:bg-white text-gray-700">
+                        Quiz
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); nav(`/docs/${doc.id}?tab=flashcards`); }} className="px-3 py-1.5 text-xs border rounded hover:bg-white text-gray-700">
+                        Flashcards
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); nav(`/docs/${doc.id}?tab=summary`); }} className="px-3 py-1.5 text-xs border rounded hover:bg-white text-gray-700">
+                        Summary
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
+      {/* Floating Action Bar */}
+      {isSelectMode && selectedIds.size > 0 && (
+        <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white pl-6 pr-2 py-2 rounded-full shadow-2xl flex items-center gap-4 z-50 animate-in slide-in-from-bottom-4 fade-in">
+          <span className="font-semibold text-sm pr-4 border-r border-gray-700">
+            {selectedIds.size} selected
+          </span>
+          
+          <div className="flex gap-1 border-r border-gray-700 pr-4 mr-2">
+            <button onClick={() => setActiveGenType("quiz")} className="px-3 py-1.5 text-sm hover:bg-gray-800 rounded-md transition text-blue-200">Quiz</button>
+            <button onClick={() => setActiveGenType("flashcards")} className="px-3 py-1.5 text-sm hover:bg-gray-800 rounded-md transition text-emerald-200">Cards</button>
+            <button onClick={() => setActiveGenType("summary")} className="px-3 py-1.5 text-sm hover:bg-gray-800 rounded-md transition text-purple-200">Summary</button>
+          </div>
+          
+          <button onClick={() => setShowAssignModal(true)} className="px-3 py-1.5 text-sm hover:bg-gray-800 rounded-md transition font-medium">
+            Assign
+          </button>
+          
+          <button onClick={() => { setSelectedIds(new Set()); setIsSelectMode(false); setPromptMode(null); }} className="ml-2 p-2 hover:bg-gray-800 rounded-full text-gray-400 hover:text-white transition">
+            <Icons.X />
+          </button>
+        </div>
+      )}
+
+      {/* Modals */}
+      {activeGenType && (
+        <GenerateModal
+          type={activeGenType}
+          docIds={Array.from(selectedIds)}
+          onClose={() => setActiveGenType(null)}
+          onSuccess={() => { setSelectedIds(new Set()); setIsSelectMode(false); setPromptMode(null); }}
+        />
+      )}
+
+      {showAssignModal && (
+        <AssignModal
+          docIds={Array.from(selectedIds)}
+          onClose={() => setShowAssignModal(false)}
+          onSuccess={() => {
+            setShowAssignModal(false);
+            setSelectedIds(new Set());
+            setIsSelectMode(false);
+            setPromptMode(null);
+            setLoading(true);
+            api.get("/api/files/mine").then(({ data }) => setItems(data.items)).finally(() => setLoading(false));
+          }}
+        />
+      )}
     </div>
   );
 }

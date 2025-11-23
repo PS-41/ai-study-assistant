@@ -1,66 +1,151 @@
+# backend/routes_quizzes.py
 from flask import Blueprint, request, jsonify, g
 from backend.db import get_db
 from backend.models import Document, Quiz, Question, Attempt, AttemptAnswer
-from backend.services.generate import generate_mcqs_from_document
+from backend.services.generate import generate_mcqs_from_source
+from backend.services.extract import read_document_text
 from backend.utils_auth import auth_required
-
-# added per instruction
-from backend.services.extract import UPLOAD_DIR
 import os
 
 bp = Blueprint("quizzes", __name__)
 
+def _fetch_docs_from_payload(payload):
+    db = get_db()
+    print(f"[DEBUG] Fetching docs for payload keys: {list(payload.keys())}")
+
+    if payload.get("document_id"):
+        print(f"[DEBUG] Single doc ID: {payload['document_id']}")
+        doc_id = int(payload["document_id"])
+        doc = db.query(Document).filter_by(id=doc_id).first()
+        if not doc: return [], ("document not found", 404)
+        if doc.user_id is not None and doc.user_id != g.user_id: return [], ("forbidden", 403)
+        return [doc], None
+
+    if payload.get("document_ids"):
+        print(f"[DEBUG] Multiple doc IDs: {payload['document_ids']}")
+        ids = payload["document_ids"]
+        docs = db.query(Document).filter(Document.id.in_(ids)).all()
+        valid_docs = [d for d in docs if d.user_id is None or d.user_id == g.user_id]
+        return valid_docs, None
+
+    if payload.get("course_id"):
+        print(f"[DEBUG] Course ID: {payload['course_id']}")
+        cid = int(payload["course_id"])
+        docs = db.query(Document).filter_by(course_id=cid).filter(
+            (Document.user_id == g.user_id) | (Document.user_id.is_(None))
+        ).all()
+        return docs, None
+
+    if payload.get("topic_id"):
+        print(f"[DEBUG] Topic ID: {payload['topic_id']}")
+        tid = int(payload["topic_id"])
+        docs = db.query(Document).filter_by(topic_id=tid).filter(
+            (Document.user_id == g.user_id) | (Document.user_id.is_(None))
+        ).all()
+        return docs, None
+
+    print("[DEBUG] No valid selection found in payload")
+    return [], ("no document selection provided", 400)
+
+
 @bp.post("/generate")
 @auth_required
 def generate():
-    payload = request.get_json(force=True)
-    document_id = payload.get("document_id")
-    title = payload.get("title", "Generated Quiz")
-    num_questions = int(payload.get("n", 5))
+    try:
+        payload = request.get_json(force=True)
+        print(f"\n--- [DEBUG] START QUIZ GENERATION ---")
+        print(f"[DEBUG] Payload: {payload}")
 
-    db = get_db()
-    doc = db.query(Document).filter_by(id=document_id).first()
-    if not doc:
-        return jsonify({"error": "document not found"}), 404
-    # Enforce ownership (allow legacy NULL-owner docs)
-    if getattr(doc, "user_id", None) is not None and doc.user_id != g.user_id:
-        return jsonify({"error": "forbidden"}), 403
+        title = payload.get("title", "Generated Quiz")
+        num_questions = int(payload.get("n", 5))
 
-    # ensure file exists on disk (handles legacy overwritten cases)
-    disk_path = os.path.join(UPLOAD_DIR, doc.filename)
-    if not os.path.exists(disk_path):
-        return jsonify({"error": "The source file is missing on the server. Please re-upload and try again."}), 410
+        db = get_db()
+        
+        # 1. Resolve documents
+        docs, err = _fetch_docs_from_payload(payload)
+        if err:
+            print(f"[DEBUG] Error resolving docs: {err}")
+            msg, code = err
+            return jsonify({"error": msg}), code
+        
+        print(f"[DEBUG] Found {len(docs)} documents: {[d.original_name for d in docs]}")
 
-    mcqs = generate_mcqs_from_document(doc.filename, n=num_questions)
+        # 2. Extract and Combine Text
+        full_text_parts = []
+        for doc in docs:
+            print(f"[DEBUG] Reading text for: {doc.filename}")
+            text = read_document_text(doc.filename)
+            if text:
+                full_text_parts.append(f"--- Source: {doc.original_name} ---\n{text}")
+            else:
+                print(f"[DEBUG] WARNING: No text extracted for {doc.filename}")
+        
+        combined_text = "\n\n".join(full_text_parts)
+        word_count = len(combined_text.split())
+        print(f"[DEBUG] Combined text length: {len(combined_text)} chars, ~{word_count} words")
 
-    if not mcqs:
-        return jsonify({"error": "not enough text to generate questions"}), 400
+        if not combined_text or word_count < 50:
+            print("[DEBUG] Error: Not enough text")
+            return jsonify({"error": "not enough text in selected documents"}), 400
 
-    quiz = Quiz(document_id=document_id, title=title)
-    db.add(quiz); db.flush()
+        # 3. Generate
+        print(f"[DEBUG] Calling LLM generation for {num_questions} questions...")
+        mcqs = generate_mcqs_from_source(combined_text, n=num_questions)
+        print(f"[DEBUG] LLM returned {len(mcqs)} MCQs")
 
-    for m in mcqs:
-        opts = "|||".join(m["options"])
-        q = Question(
-            quiz_id=quiz.id,
-            qtype="mcq",
-            prompt=m["prompt"],
-            options=opts,
-            answer=m["answer"],
-            explanation=m.get("explanation", "")
-        )
-        db.add(q)
-    db.commit()
-    return jsonify({"quiz_id": quiz.id, "count": len(mcqs)})
+        if not mcqs:
+            print("[DEBUG] Error: No MCQs parsed")
+            return jsonify({"error": "failed to generate questions from text"}), 400
+
+        # 4. Save to DB
+        quiz = Quiz(title=title)
+        db.add(quiz)
+        db.flush()
+
+        quiz.sources.extend(docs)
+
+        for m in mcqs:
+            opts = "|||".join(m["options"])
+            q = Question(
+                quiz_id=quiz.id,
+                qtype="mcq",
+                prompt=m["prompt"],
+                options=opts,
+                answer=m["answer"],
+                explanation=m.get("explanation", "")
+            )
+            db.add(q)
+        
+        db.commit()
+        print(f"[DEBUG] Quiz saved with ID: {quiz.id}")
+        return jsonify({"quiz_id": quiz.id, "count": len(mcqs)})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 
 @bp.get("/<int:quiz_id>")
+@auth_required
 def get_quiz(quiz_id):
     db = get_db()
-    qs = db.query(Question).filter_by(quiz_id=quiz_id).all()
-    if not qs:
+    quiz = db.query(Quiz).filter_by(id=quiz_id).first()
+    if not quiz:
         return jsonify({"error": "quiz not found"}), 404
+    
+    if quiz.sources:
+        first_doc = quiz.sources[0]
+        if first_doc.user_id is not None and first_doc.user_id != g.user_id:
+             return jsonify({"error": "forbidden"}), 403
+
+    qs = db.query(Question).filter_by(quiz_id=quiz_id).all()
+    source_names = [d.original_name for d in quiz.sources]
+
     return jsonify({
         "quiz_id": quiz_id,
+        "title": quiz.title,
+        "sources": source_names,
         "questions": [{
             "id": q.id,
             "type": q.qtype,
@@ -72,6 +157,7 @@ def get_quiz(quiz_id):
     })
 
 @bp.post("/attempt")
+@auth_required
 def attempt():
     payload = request.get_json(force=True)
     quiz_id = int(payload["quiz_id"])
@@ -89,7 +175,7 @@ def attempt():
     db.add(att); db.flush()
 
     correct = 0
-    details = []  # <-- collect per-question results
+    details = []
 
     for a in answers:
         qid = int(a.get("question_id"))
@@ -115,36 +201,34 @@ def attempt():
         "correct": correct,
         "total": total,
         "score_pct": att.score_pct,
-        "details": details  # <-- NEW
+        "details": details
     })
 
 @bp.get("/mine")
 @auth_required
 def my_quizzes():
     db = get_db()
-
-    # Base query: quizzes for docs owned by user (or legacy docs with NULL user_id)
     q = (
-        db.query(Quiz, Document)
-        .join(Document, Quiz.document_id == Document.id)
+        db.query(Quiz)
+        .join(Quiz.sources)
         .filter((Document.user_id == g.user_id) | (Document.user_id.is_(None)))
+        .distinct()
     )
 
-    # Optional filter by document_id (for the Document Details page)
     document_id = request.args.get("document_id", type=int)
     if document_id is not None:
-        q = q.filter(Quiz.document_id == document_id)
+        q = q.filter(Document.id == document_id)
 
     q = q.order_by(Quiz.created_at.desc()).limit(100)
 
     items = []
-    for quiz, doc in q.all():
+    for quiz in q.all():
         cnt = db.query(Attempt).filter_by(quiz_id=quiz.id).count()
+        sources_data = [{"id": d.id, "original_name": d.original_name} for d in quiz.sources]
         items.append({
             "quiz_id": quiz.id,
             "title": quiz.title,
-            "document_id": doc.id,
-            "document_name": doc.original_name,
+            "sources": sources_data,  # <--- CHANGED
             "created_at": quiz.created_at.isoformat(),
             "attempts": cnt
         })
@@ -154,14 +238,14 @@ def my_quizzes():
 @auth_required
 def quiz_attempts(quiz_id):
     db = get_db()
-    # optional: authorize that the quiz belongs to this user
-    from backend.models import Question
     quiz = db.query(Quiz).filter_by(id=quiz_id).first()
     if not quiz:
         return jsonify({"error":"not found"}), 404
-    doc = db.query(Document).filter_by(id=quiz.document_id).first()
-    if doc and doc.user_id and doc.user_id != g.user_id:
-        return jsonify({"error":"forbidden"}), 403
+    
+    if quiz.sources:
+        first_doc = quiz.sources[0]
+        if first_doc.user_id is not None and first_doc.user_id != g.user_id:
+            return jsonify({"error":"forbidden"}), 403
 
     atts = db.query(Attempt).filter_by(quiz_id=quiz_id).order_by(Attempt.created_at.desc()).limit(50)
     return jsonify({
@@ -175,32 +259,23 @@ def quiz_attempts(quiz_id):
 @bp.get("/<int:quiz_id>/attempts/<int:attempt_id>")
 @auth_required
 def attempt_detail(quiz_id, attempt_id):
-    """
-    Return a single attempt with per-question user answers and correctness.
-    Only allowed if the quiz/document belongs to the current user (or legacy NULL owner).
-    """
     db = get_db()
-
-    # 1) Fetch quiz + ensure it exists
     quiz = db.query(Quiz).filter_by(id=quiz_id).first()
     if not quiz:
         return jsonify({"error": "quiz not found"}), 404
+        
+    if quiz.sources:
+        first_doc = quiz.sources[0]
+        if first_doc.user_id is not None and first_doc.user_id != g.user_id:
+            return jsonify({"error":"forbidden"}), 403
 
-    # 2) Ownership check via the underlying document
-    doc = db.query(Document).filter_by(id=quiz.document_id).first()
-    if doc and doc.user_id and doc.user_id != g.user_id:
-        return jsonify({"error": "forbidden"}), 403
-
-    # 3) Fetch attempt & ensure it belongs to this quiz
     att = db.query(Attempt).filter_by(id=attempt_id, quiz_id=quiz_id).first()
     if not att:
         return jsonify({"error": "attempt not found"}), 404
 
-    # 4) Fetch all questions for this quiz
     questions = db.query(Question).filter_by(quiz_id=quiz_id).all()
     q_by_id = {q.id: q for q in questions}
 
-    # 5) Fetch all answers for this attempt
     ans_rows = db.query(AttemptAnswer).filter_by(attempt_id=attempt_id).all()
 
     items = []
@@ -236,9 +311,10 @@ def quiz_answers(quiz_id):
     if not quiz:
         return jsonify({"error": "not found"}), 404
 
-    doc = db.query(Document).filter_by(id=quiz.document_id).first()
-    if doc and doc.user_id and doc.user_id != g.user_id:
-        return jsonify({"error": "forbidden"}), 403
+    if quiz.sources:
+        first_doc = quiz.sources[0]
+        if first_doc.user_id is not None and first_doc.user_id != g.user_id:
+            return jsonify({"error":"forbidden"}), 403
 
     qs = db.query(Question).filter_by(quiz_id=quiz_id).order_by(Question.id.asc()).all()
     return jsonify({

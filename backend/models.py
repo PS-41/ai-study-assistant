@@ -1,8 +1,33 @@
 # backend/models.py
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean, func
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean, func, Table
 from sqlalchemy.orm import relationship
 from backend.db import Base
+
+# --- Association Tables for Many-to-Many relationships ---
+
+quiz_documents = Table(
+    "quiz_documents",
+    Base.metadata,
+    Column("quiz_id", Integer, ForeignKey("quizzes.id"), primary_key=True),
+    Column("document_id", Integer, ForeignKey("documents.id"), primary_key=True),
+)
+
+summary_documents = Table(
+    "summary_documents",
+    Base.metadata,
+    Column("summary_id", Integer, ForeignKey("summaries.id"), primary_key=True),
+    Column("document_id", Integer, ForeignKey("documents.id"), primary_key=True),
+)
+
+flashcard_set_documents = Table(
+    "flashcard_set_documents",
+    Base.metadata,
+    Column("set_id", Integer, ForeignKey("flashcard_sets.id"), primary_key=True),
+    Column("document_id", Integer, ForeignKey("documents.id"), primary_key=True),
+)
+
+# --- Models ---
 
 class User(Base):
     __tablename__ = "users"
@@ -20,32 +45,39 @@ class Document(Base):
     mime_type = Column(String, nullable=False)
     size = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    # Optional organization
+    
+    # Organization (Optional)
     course_id = Column(Integer, ForeignKey("courses.id"), nullable=True)
     topic_id = Column(Integer, ForeignKey("topics.id"), nullable=True)
+    
     course = relationship("Course", back_populates="documents")
     topic = relationship("Topic", back_populates="documents")
 
 class Summary(Base):
     __tablename__ = "summaries"
     id = Column(Integer, primary_key=True)
-    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False, unique=True)
+    # No single document_id anymore
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     content = Column(Text, nullable=False)
+    title = Column(String, nullable=True)  # e.g. "Summary of Week 1"
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    document = relationship("Document")
+    
+    # M2M relationship
+    sources = relationship("Document", secondary=summary_documents, backref="summaries")
 
 class FlashcardSet(Base):
     __tablename__ = "flashcard_sets"
 
     id = Column(Integer, primary_key=True)
-    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    # No single document_id anymore
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     title = Column(String(255), nullable=False, default="Flashcards")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    document = relationship("Document")
+    # M2M relationship
+    sources = relationship("Document", secondary=flashcard_set_documents, backref="flashcard_sets")
     cards = relationship("Flashcard", back_populates="set", cascade="all, delete-orphan")
 
 class Flashcard(Base):
@@ -62,10 +94,12 @@ class Flashcard(Base):
 class Quiz(Base):
     __tablename__ = "quizzes"
     id = Column(Integer, primary_key=True)
-    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    # No single document_id anymore
     title = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    document = relationship("Document")
+    
+    # M2M relationship
+    sources = relationship("Document", secondary=quiz_documents, backref="quizzes")
 
 class Question(Base):
     __tablename__ = "questions"
@@ -73,9 +107,8 @@ class Question(Base):
     quiz_id = Column(Integer, ForeignKey("quizzes.id"), nullable=False)
     qtype = Column(String, nullable=False)   # "mcq"
     prompt = Column(Text, nullable=False)
-    # store options as a single text field (| delimiter) to keep it simple
     options = Column(Text, nullable=False)   # e.g., "A|||B|||C|||D"
-    answer = Column(String, nullable=False)  # exact option text that is correct
+    answer = Column(String, nullable=False)  # exact option text
     explanation = Column(Text)
     quiz = relationship("Quiz")
 

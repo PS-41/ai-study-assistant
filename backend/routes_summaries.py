@@ -8,34 +8,78 @@ from backend.utils_auth import auth_required
 
 bp = Blueprint("summaries", __name__)
 
-def _load_doc_for_user(doc_id: int):
-    """Fetch a document and enforce ownership/legacy access."""
+def _fetch_docs_from_payload(payload):
+    # Duplicate helper for self-contained file changes
     db = get_db()
-    doc = db.query(Document).filter_by(id=doc_id).first()
-    if not doc:
-        return None, ("not found", 404)
-    # Allow if owned or legacy (NULL user)
-    if doc.user_id is not None and doc.user_id != getattr(g, "user_id", None):
-        return None, ("forbidden", 403)
-    return doc, None
+    if payload.get("document_id"):
+        doc_id = int(payload["document_id"])
+        doc = db.query(Document).filter_by(id=doc_id).first()
+        if not doc: return [], ("not found", 404)
+        if doc.user_id is not None and doc.user_id != g.user_id: return [], ("forbidden", 403)
+        return [doc], None
+    if payload.get("document_ids"):
+        ids = payload["document_ids"]
+        if not isinstance(ids, list): return [], ("ids must be list", 400)
+        docs = db.query(Document).filter(Document.id.in_(ids)).all()
+        valid = [d for d in docs if d.user_id is None or d.user_id == g.user_id]
+        if not valid: return [], ("no valid docs", 404)
+        return valid, None
+    if payload.get("course_id"):
+        cid = int(payload["course_id"])
+        docs = db.query(Document).filter_by(course_id=cid).filter((Document.user_id == g.user_id)|(Document.user_id.is_(None))).all()
+        if not docs: return [], ("no docs in course", 404)
+        return docs, None
+    if payload.get("topic_id"):
+        tid = int(payload["topic_id"])
+        docs = db.query(Document).filter_by(topic_id=tid).filter((Document.user_id == g.user_id)|(Document.user_id.is_(None))).all()
+        if not docs: return [], ("no docs in topic", 404)
+        return docs, None
+    return [], ("no selection", 400)
 
 
-@bp.get("/<int:document_id>")
+@bp.get("/")
 @auth_required
-def get_summary(document_id):
+def list_summaries():
+    """List all summaries owned by user."""
     db = get_db()
-    doc, err = _load_doc_for_user(document_id)
-    if err:
-        msg, code = err
-        return jsonify({"error": msg}), code
+    q = db.query(Summary).filter_by(user_id=g.user_id)
+    
+    # Optional: filter by containing doc
+    doc_id = request.args.get("document_id", type=int)
+    if doc_id:
+        q = q.filter(Summary.sources.any(Document.id == doc_id))
+        
+    q = q.order_by(Summary.created_at.desc())
+    
+    items = []
+    for s in q.all():
+        sources_data = [{"id": d.id, "original_name": d.original_name} for d in s.sources]
+        items.append({
+            "id": s.id,
+            "title": s.title or "Untitled Summary",
+            "sources": sources_data,
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "preview": s.content[:100] + "..." if s.content else ""
+        })
+    return jsonify({"items": items})
 
-    s = db.query(Summary).filter_by(document_id=document_id).first()
+
+@bp.get("/<int:summary_id>")
+@auth_required
+def get_summary(summary_id):
+    db = get_db()
+    s = db.query(Summary).filter_by(id=summary_id).first()
     if not s:
-        return jsonify({"error": "no summary yet"}), 404
+        return jsonify({"error": "summary not found"}), 404
+    if s.user_id != g.user_id:
+        return jsonify({"error": "forbidden"}), 403
 
+    source_names = [d.original_name for d in s.sources]
     return jsonify({
-        "document_id": s.document_id,
-        "summary": s.content,
+        "id": s.id,
+        "title": s.title,
+        "content": s.content,
+        "sources": source_names,
         "created_at": s.created_at.isoformat() if s.created_at else None,
     })
 
@@ -44,45 +88,41 @@ def get_summary(document_id):
 @auth_required
 def generate_summary():
     payload = request.get_json(force=True)
-    document_id = payload.get("document_id")
-    if not document_id:
-        return jsonify({"error": "document_id is required"}), 400
-
+    title = payload.get("title", "Generated Summary")
+    
     db = get_db()
-    doc, err = _load_doc_for_user(int(document_id))
+    docs, err = _fetch_docs_from_payload(payload)
     if err:
         msg, code = err
         return jsonify({"error": msg}), code
 
-    # Read document text
-    source = read_document_text(doc.filename)
-    if not source or len(source.split()) < 40:
-        return jsonify({"error": "not enough text to summarize"}), 400
+    full_text_parts = []
+    for doc in docs:
+        text = read_document_text(doc.filename)
+        if text:
+            full_text_parts.append(f"--- Source: {doc.original_name} ---\n{text}")
+    combined = "\n\n".join(full_text_parts)
+
+    if not combined or len(combined.split()) < 50:
+        return jsonify({"error": "not enough text"}), 400
 
     try:
-        text = generate_summary_from_source(source)
+        text = generate_summary_from_source(combined)
     except Exception as e:
-        return jsonify({"error": f"summary generation failed: {e}"}), 500
+        return jsonify({"error": f"generation failed: {e}"}), 500
 
-    text = text.strip()
-    if not text:
-        return jsonify({"error": "summary generation returned empty text"}), 500
-
-    # Upsert: one summary per document_id
-    s = db.query(Summary).filter_by(document_id=doc.id).first()
-    if s:
-        s.content = text
-    else:
-        s = Summary(
-            document_id=doc.id,
-            user_id=getattr(g, "user_id", None),
-            content=text,
-        )
-        db.add(s)
+    s = Summary(
+        user_id=g.user_id,
+        content=text,
+        title=title
+    )
+    db.add(s)
+    db.flush()
+    s.sources.extend(docs)
     db.commit()
 
     return jsonify({
-        "document_id": s.document_id,
-        "summary": s.content,
-        "created_at": s.created_at.isoformat() if s.created_at else None,
+        "id": s.id,
+        "title": s.title,
+        "content": s.content,
     })

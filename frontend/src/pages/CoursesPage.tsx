@@ -2,513 +2,301 @@
 import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
+import GenerateModal from "../components/GenerateModal";
+import { CreateCourseModal, CreateTopicModal } from "../components/ResourceModals";
 
-type Course = {
-  id: number;
-  name: string;
-  description?: string | null;
-  created_at?: string | null;
+// --- Types ---
+type Course = { id: number; name: string; description?: string|null };
+type Topic = { id: number; name: string; description?: string|null; course_id: number };
+type Doc = { id: number; original_name: string; size: number; created_at: string; topic_id?: number|null };
+
+// --- Icons ---
+const Icons = {
+  Plus: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>,
+  Folder: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>,
+  FileText: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>,
+  ChevronRight: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>,
+  ChevronDown: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>,
+  CheckSquare: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>,
+  Square: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>,
+  X: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>,
+  FilePlus: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
 };
-
-type Topic = {
-  id: number;
-  name: string;
-  description?: string | null;
-  course_id: number;
-  created_at?: string | null;
-};
-
-type Doc = {
-  id: number;
-  original_name: string;
-  filename: string;
-  mime: string;
-  size: number;
-  created_at: string;
-  owned: boolean;
-  course_id?: number | null;
-  course_name?: string | null;
-  topic_id?: number | null;
-  topic_name?: string | null;
-};
-
-const apiOrigin = import.meta.env.DEV ? "http://localhost:5000" : "";
-const apiHref = (path: string) => `${apiOrigin}${path}`;
 
 export default function CoursesPage() {
   const nav = useNavigate();
-
   const [courses, setCourses] = useState<Course[]>([]);
-  const [coursesLoading, setCoursesLoading] = useState(true);
-
+  const [loading, setLoading] = useState(true);
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
-
-  const [topicsByCourse, setTopicsByCourse] = useState<Record<number, Topic[]>>(
-    {}
-  );
-  const [topicsLoading, setTopicsLoading] = useState<Record<number, boolean>>(
-    {}
-  );
-
+  
+  // Data Cache
+  const [topicsByCourse, setTopicsByCourse] = useState<Record<number, Topic[]>>({});
   const [docsByCourse, setDocsByCourse] = useState<Record<number, Doc[]>>({});
-  const [docsLoading, setDocsLoading] = useState<Record<number, boolean>>({});
+  const [loadingDetails, setLoadingDetails] = useState<Record<number, boolean>>({});
 
-  // Creation form state
-  const [creatingCourse, setCreatingCourse] = useState(false);
-  const [courseName, setCourseName] = useState("");
-  const [courseDescription, setCourseDescription] = useState("");
+  // UI State
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedDocIds, setSelectedDocIds] = useState<Set<number>>(new Set());
+  const [expandedTopics, setExpandedTopics] = useState<Record<string, boolean>>({});
+  
+  // Modals
+  const [showCourseModal, setShowCourseModal] = useState(false);
+  const [showTopicModal, setShowTopicModal] = useState(false);
+  const [activeGenType, setActiveGenType] = useState<"quiz"|"flashcards"|"summary"|null>(null);
+  
+  // Add Doc Modal State
+  const [showAddDocModal, setShowAddDocModal] = useState(false);
+  const [targetTopicId, setTargetTopicId] = useState<number | null>(null); // null = course level
 
-  const [creatingTopic, setCreatingTopic] = useState(false);
-  const [topicName, setTopicName] = useState("");
-  const [topicDescription, setTopicDescription] = useState("");
-  const [topicCourseId, setTopicCourseId] = useState<number | "">("");
-
-  // -------------------------------------------------------
-  // Load user's courses
-  // -------------------------------------------------------
   useEffect(() => {
-    setCoursesLoading(true);
-    api
-      .get("/api/courses/mine")
+    setLoading(true);
+    api.get("/api/courses/mine")
       .then(({ data }) => {
-        const items: Course[] = data.items || [];
-        setCourses(items);
-        if (!selectedCourseId && items.length > 0) {
-          setSelectedCourseId(items[0].id);
-        }
+        setCourses(data.items || []);
+        if (!selectedCourseId && data.items?.length > 0) setSelectedCourseId(data.items[0].id);
       })
-      .catch((e: any) => {
-        if (e?.response?.status === 401) nav("/login");
-        else setCourses([]);
-      })
-      .finally(() => setCoursesLoading(false));
+      .finally(() => setLoading(false));
   }, [nav]);
 
-  // -------------------------------------------------------
-  // Helpers to load topics/docs for a course
-  // -------------------------------------------------------
-  async function loadTopics(courseId: number) {
-    if (topicsByCourse[courseId] || topicsLoading[courseId]) return;
-    setTopicsLoading((prev) => ({ ...prev, [courseId]: true }));
-    try {
-      const { data } = await api.get(`/api/topics/by_course/${courseId}`);
-      setTopicsByCourse((prev) => ({
-        ...prev,
-        [courseId]: data.items || [],
-      }));
-    } catch (e) {
-      console.error("Failed to load topics", e);
-    } finally {
-      setTopicsLoading((prev) => ({ ...prev, [courseId]: false }));
-    }
-  }
-
-  async function loadDocs(courseId: number) {
-    if (docsByCourse[courseId] || docsLoading[courseId]) return;
-    setDocsLoading((prev) => ({ ...prev, [courseId]: true }));
-    try {
-      const { data } = await api.get("/api/files/mine", {
-        params: { course_id: courseId },
-      });
-      setDocsByCourse((prev) => ({
-        ...prev,
-        [courseId]: (data.items || []) as Doc[],
-      }));
-    } catch (e) {
-      console.error("Failed to load docs for course", e);
-      setDocsByCourse((prev) => ({ ...prev, [courseId]: [] }));
-    } finally {
-      setDocsLoading((prev) => ({ ...prev, [courseId]: false }));
-    }
-  }
-
-  async function reloadCourses() {
-    try {
-      const { data } = await api.get("/api/courses/mine");
-      setCourses(data.items || []);
-    } catch (e: any) {
-      setCourses([]);
-    }
-  }
-
-  async function handleCreateCourse(e: any) {
-    e.preventDefault();
-    if (!courseName.trim()) {
-      alert("Please enter a course name");
-      return;
-    }
-    setCreatingCourse(true);
-    try {
-      await api.post("/api/courses", {
-        name: courseName.trim(),
-        description: courseDescription.trim() || null,
-      });
-      setCourseName("");
-      setCourseDescription("");
-      await reloadCourses();
-    } catch (e: any) {
-      alert(e?.response?.data?.error || "Failed to create course");
-    } finally {
-      setCreatingCourse(false);
-    }
-  }
-
-  async function handleCreateTopic(e: any) {
-    e.preventDefault();
-    if (!topicCourseId) {
-      alert("Please pick a course for this topic");
-      return;
-    }
-    if (!topicName.trim()) {
-      alert("Please enter a topic name");
-      return;
-    }
-
-    setCreatingTopic(true);
-    try {
-      await api.post("/api/topics", {
-        course_id: topicCourseId,
-        name: topicName.trim(),
-        description: topicDescription.trim() || null,
-      });
-
-      setTopicName("");
-      setTopicDescription("");
-      setTopicCourseId("");
-      await reloadCourses();
-    } catch (e: any) {
-      alert(e?.response?.data?.error || "Failed to create topic");
-    } finally {
-      setCreatingTopic(false);
-    }
-  }
-
-
-
-  // Load topics/docs when course changes
+  // Fetch details when course selected
   useEffect(() => {
     if (!selectedCourseId) return;
-    loadTopics(selectedCourseId);
-    loadDocs(selectedCourseId);
+    reloadCourseDetails(selectedCourseId);
   }, [selectedCourseId]);
 
-  const selectedCourse = useMemo(
-    () => courses.find((c) => c.id === selectedCourseId) || null,
-    [courses, selectedCourseId]
-  );
-
-  const topicsForSelected = selectedCourseId
-    ? topicsByCourse[selectedCourseId] || []
-    : [];
-
-  const docsForSelected = selectedCourseId
-    ? docsByCourse[selectedCourseId] || []
-    : [];
-
-  // Group docs by topic_id (with a "No topic" bucket)
-  const groupedDocs = useMemo(() => {
-    const byTopic: Record<string, Doc[]> = {};
-    for (const d of docsForSelected) {
-      const key = d.topic_id ? String(d.topic_id) : "none";
-      if (!byTopic[key]) byTopic[key] = [];
-      byTopic[key].push(d);
+  async function reloadCourseDetails(courseId: number) {
+    setLoadingDetails(prev => ({ ...prev, [courseId]: true }));
+    try {
+      const [tRes, dRes] = await Promise.all([
+        api.get(`/api/topics/by_course/${courseId}`),
+        api.get("/api/files/mine", { params: { course_id: courseId } })
+      ]);
+      setTopicsByCourse(prev => ({ ...prev, [courseId]: tRes.data.items || [] }));
+      setDocsByCourse(prev => ({ ...prev, [courseId]: dRes.data.items || [] }));
+      
+      // Auto expand
+      const tIds = (tRes.data.items || []).map((t:Topic) => String(t.id));
+      setExpandedTopics(prev => {
+        const next = { ...prev, "none": true };
+        tIds.forEach((id:string) => next[id] = true);
+        return next;
+      });
+    } finally {
+      setLoadingDetails(prev => ({ ...prev, [courseId]: false }));
     }
-    return byTopic;
-  }, [docsForSelected]);
+  }
 
-  if (coursesLoading) return <div>Loading courses…</div>;
+  const selectedCourse = courses.find(c => c.id === selectedCourseId);
+  const topics = selectedCourseId ? topicsByCourse[selectedCourseId] || [] : [];
+  const docs = selectedCourseId ? docsByCourse[selectedCourseId] || [] : [];
+
+  const groupedDocs = useMemo(() => {
+    const groups: Record<string, Doc[]> = { "none": [] };
+    topics.forEach(t => groups[String(t.id)] = []);
+    docs.forEach(d => {
+      const key = d.topic_id ? String(d.topic_id) : "none";
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(d);
+    });
+    return groups;
+  }, [docs, topics]);
+
+  const toggleDocSelection = (docId: number) => {
+    setSelectedDocIds(prev => {
+      const next = new Set(prev);
+      if (next.has(docId)) next.delete(docId); else next.add(docId);
+      return next;
+    });
+  };
+
+  const openAddDocModal = (topicId: number | null) => {
+    setTargetTopicId(topicId);
+    setShowAddDocModal(true);
+  };
 
   return (
-    <div className="grid gap-4 md:grid-cols-[260px,1fr]">
-      {/* Left: course list */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold">My Courses</h2>
+    <div className="flex h-[calc(100vh-60px)] bg-gray-50">
+      {/* Sidebar */}
+      <aside className="w-64 bg-white border-r flex flex-col flex-shrink-0">
+        <div className="p-4 border-b flex items-center justify-between">
+          <h2 className="font-semibold text-gray-700">My Courses</h2>
+          <button onClick={() => setShowCourseModal(true)} className="p-1 hover:bg-gray-100 rounded text-blue-600"><Icons.Plus /></button>
         </div>
-        
-        {/* Quick creation panel */}
-        <div className="grid gap-4 md:grid-cols-2 mb-6">
-          {/* Create Course */}
-          <form
-            onSubmit={handleCreateCourse}
-            className="rounded border bg-white p-4 space-y-2"
-          >
-            <div className="text-sm font-medium">Create new course</div>
-            <input
-              className="w-full border rounded px-2 py-1 text-sm"
-              placeholder="Course name (e.g. CSCE 676 - Data Mining)"
-              value={courseName}
-              onChange={(e) => setCourseName(e.target.value)}
-            />
-            <textarea
-              className="w-full border rounded px-2 py-1 text-sm"
-              placeholder="Optional description"
-              rows={2}
-              value={courseDescription}
-              onChange={(e) => setCourseDescription(e.target.value)}
-            />
-            <button
-              type="submit"
-              disabled={creatingCourse}
-              className="px-3 py-1 text-sm rounded bg-blue-600 text-white disabled:opacity-50 hover:bg-blue-700"
-            >
-              {creatingCourse ? "Creating…" : "Create course"}
+        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          {courses.map(c => (
+            <button key={c.id} onClick={() => setSelectedCourseId(c.id)} className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm ${selectedCourseId===c.id ? "bg-blue-50 text-blue-700 font-medium ring-1 ring-blue-200" : "text-gray-600 hover:bg-gray-100"}`}>
+              <Icons.Folder /><span className="truncate">{c.name}</span>
             </button>
-          </form>
-
-          {/* Create Topic */}
-          <form
-            onSubmit={handleCreateTopic}
-            className="rounded border bg-white p-4 space-y-2"
-          >
-            <div className="text-sm font-medium">Create new topic</div>
-
-            <select
-              className="w-full border rounded px-2 py-1 text-sm"
-              value={topicCourseId === "" ? "" : String(topicCourseId)}
-              onChange={(e) => {
-                const val = e.target.value;
-                setTopicCourseId(val ? Number(val) : "");
-              }}
-            >
-              <option value="">Select course…</option>
-              {courses.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-
-            <input
-              className="w-full border rounded px-2 py-1 text-sm"
-              placeholder="Topic name (e.g. Week 3 - Decision Trees)"
-              value={topicName}
-              onChange={(e) => setTopicName(e.target.value)}
-            />
-            <textarea
-              className="w-full border rounded px-2 py-1 text-sm"
-              placeholder="Optional topic description"
-              rows={2}
-              value={topicDescription}
-              onChange={(e) => setTopicDescription(e.target.value)}
-            />
-
-            <button
-              type="submit"
-              disabled={creatingTopic || !courses.length}
-              className="px-3 py-1 text-sm rounded bg-emerald-600 text-white disabled:opacity-40 hover:bg-emerald-700"
-            >
-              {creatingTopic ? "Creating…" : "Create topic"}
-            </button>
-
-            {!courses.length && (
-              <div className="text-xs text-gray-500 mt-1">
-                Create a course first, then you can add topics to it.
-              </div>
-            )}
-          </form>
+          ))}
         </div>
+      </aside>
 
-        <div className="rounded border bg-white divide-y">
-          {courses.map((c) => {
-            const isActive = c.id === selectedCourseId;
-            return (
-              <button
-                key={c.id}
-                onClick={() => setSelectedCourseId(c.id)}
-                className={[
-                  "w-full text-left px-3 py-2 text-sm",
-                  isActive
-                    ? "bg-blue-50 border-l-2 border-l-blue-600"
-                    : "hover:bg-gray-50",
-                ].join(" ")}
-              >
-                <div className="font-medium truncate">{c.name}</div>
-                {c.description && (
-                  <div className="text-[11px] text-gray-500 line-clamp-2">
-                    {c.description}
-                  </div>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Right: selected course detail */}
-      <div className="space-y-4">
+      {/* Main */}
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {selectedCourse ? (
           <>
-            <div>
-              <h3 className="text-xl font-semibold">{selectedCourse.name}</h3>
-              {selectedCourse.description && (
-                <p className="mt-1 text-sm text-gray-600">
-                  {selectedCourse.description}
-                </p>
-              )}
-            </div>
-
-            {/* Topics summary */}
-            <div className="rounded border bg-white p-3">
-              <div className="text-sm font-medium mb-2">Topics</div>
-              {topicsLoading[selectedCourse.id] && (
-                <div className="text-xs text-gray-500">Loading topics…</div>
-              )}
-              {!topicsLoading[selectedCourse.id] && !topicsForSelected.length && (
-                <div className="text-xs text-gray-500">
-                  No topics yet in this course.
-                </div>
-              )}
-              {!!topicsForSelected.length && (
-                <div className="flex flex-wrap gap-2">
-                  {topicsForSelected.map((t) => {
-                    const count =
-                      docsForSelected.filter((d) => d.topic_id === t.id)
-                        .length || 0;
-                    return (
-                      <div
-                        key={t.id}
-                        className="rounded-full border px-3 py-1 text-xs bg-gray-50"
-                      >
-                        {t.name}
-                        {count ? <span className="ml-1 text-gray-500">({count})</span> : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Documents grouped by topic */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-medium">
-                  Documents in this course
-                </div>
-                {docsLoading[selectedCourse.id] && (
-                  <div className="text-xs text-gray-500">Loading docs…</div>
-                )}
+            <header className="bg-white border-b px-6 py-4 flex items-start justify-between">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-800">{selectedCourse.name}</h1>
+                <p className="text-gray-500 text-sm mt-1">{selectedCourse.description}</p>
               </div>
+              <div className="flex gap-2">
+                <button onClick={() => setIsSelectMode(!isSelectMode)} className={`px-3 py-1.5 text-sm rounded border ${isSelectMode ? "bg-gray-800 text-white" : "bg-white text-gray-700 hover:bg-gray-50"}`}>
+                  {isSelectMode ? "Done" : "Select"}
+                </button>
+                <button onClick={() => setShowTopicModal(true)} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 shadow-sm">
+                  + New Topic
+                </button>
+              </div>
+            </header>
 
-              {!docsLoading[selectedCourse.id] && !docsForSelected.length && (
-                <div className="text-sm text-gray-500">
-                  No documents assigned to this course yet.  
-                  Use <span className="font-medium">Assign</span> from My
-                  Documents to add some.
-                </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {loadingDetails[selectedCourse.id] ? (
+                <div className="text-gray-400">Loading...</div>
+              ) : (
+                <>
+                  <TopicSection 
+                    title="General Documents" 
+                    docs={groupedDocs["none"]} 
+                    isSelectMode={isSelectMode} selectedIds={selectedDocIds} onToggle={toggleDocSelection}
+                    expanded={!!expandedTopics["none"]} onToggleExpand={() => setExpandedTopics(p => ({...p, "none": !p["none"]}))}
+                    onAddDoc={() => openAddDocModal(null)}
+                  />
+                  {topics.map(t => (
+                    <TopicSection
+                      key={t.id} title={t.name} subtitle={t.description}
+                      docs={groupedDocs[String(t.id)] || []}
+                      isSelectMode={isSelectMode} selectedIds={selectedDocIds} onToggle={toggleDocSelection}
+                      expanded={!!expandedTopics[String(t.id)]} onToggleExpand={() => setExpandedTopics(p => ({...p, [String(t.id)]: !p[String(t.id)]}))}
+                      onAddDoc={() => openAddDocModal(t.id)}
+                    />
+                  ))}
+                </>
               )}
-
-              {!docsLoading[selectedCourse.id] &&
-                !!docsForSelected.length && (
-                  <div className="space-y-4">
-                    {/* "No topic" group */}
-                    {groupedDocs["none"] && (
-                      <div>
-                        <div className="text-xs font-semibold text-gray-600 mb-1">
-                          No topic
-                        </div>
-                        <DocList
-                          docs={groupedDocs["none"]}
-                          selectedCourseId={selectedCourse.id}
-                        />
-                      </div>
-                    )}
-
-                    {/* Each topic group */}
-                    {topicsForSelected.map((t) => {
-                      const key = String(t.id);
-                      const docs = groupedDocs[key] || [];
-                      if (!docs.length) return null;
-                      return (
-                        <div key={t.id}>
-                          <div className="text-xs font-semibold text-gray-600 mb-1">
-                            {t.name}
-                          </div>
-                          <DocList
-                            docs={docs}
-                            selectedCourseId={selectedCourse.id}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
             </div>
           </>
-        ) : (
-          <div className="text-sm text-gray-600">
-            Select a course on the left to see its contents.
-          </div>
-        )}
-      </div>
+        ) : <div className="flex-1 flex items-center justify-center text-gray-400">Select a course</div>}
+      </main>
+
+      {/* Floating Action */}
+      {isSelectMode && selectedDocIds.size > 0 && (
+        <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-xl flex items-center gap-4 animate-in fade-in slide-in-from-bottom-4 z-50">
+          <span className="font-medium text-sm pr-4 border-r border-gray-700">{selectedDocIds.size} selected</span>
+          <button onClick={() => setActiveGenType("quiz")} className="text-sm hover:text-blue-300">Quiz</button>
+          <button onClick={() => setActiveGenType("flashcards")} className="text-sm hover:text-emerald-300">Cards</button>
+          <button onClick={() => setActiveGenType("summary")} className="text-sm hover:text-purple-300">Summary</button>
+          <button onClick={() => setSelectedDocIds(new Set())} className="ml-2 hover:text-gray-400"><Icons.X /></button>
+        </div>
+      )}
+
+      {/* Modals */}
+      {showCourseModal && <CreateCourseModal onClose={()=>setShowCourseModal(false)} onSuccess={(c)=>{setCourses(p=>[...p, c]); setSelectedCourseId(c.id);}} />}
+      {showTopicModal && selectedCourseId && <CreateTopicModal courseId={selectedCourseId} onClose={()=>setShowTopicModal(false)} onSuccess={(t)=>reloadCourseDetails(selectedCourseId!)} />}
+      
+      {activeGenType && <GenerateModal type={activeGenType} docIds={Array.from(selectedDocIds)} onClose={()=>setActiveGenType(null)} onSuccess={()=>{setSelectedDocIds(new Set());}} />}
+      
+      {/* Add Doc Modal (Inline definition for simplicity) */}
+      {showAddDocModal && selectedCourseId && (
+        <AddDocModal 
+          courseId={selectedCourseId} 
+          topicId={targetTopicId} 
+          currentDocs={docs} 
+          onClose={() => setShowAddDocModal(false)} 
+          onSuccess={() => reloadCourseDetails(selectedCourseId)} 
+        />
+      )}
     </div>
   );
 }
 
-// Small helper component just to keep the course page tidy
-function DocList({
-  docs,
-}: {
-  docs: Doc[];
-  selectedCourseId: number;
-}) {
+// Helper: Topic Section
+function TopicSection({ title, subtitle, docs, isSelectMode, selectedIds, onToggle, expanded, onToggleExpand, onAddDoc }: any) {
   const nav = useNavigate();
+  return (
+    <div className="bg-white border rounded-lg shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between p-3 bg-gray-50">
+        <button onClick={onToggleExpand} className="flex items-center gap-2 text-left flex-1">
+          {expanded ? <Icons.ChevronDown /> : <Icons.ChevronRight />}
+          <div>
+            <span className="font-medium text-gray-800">{title}</span>
+            {subtitle && <span className="ml-2 text-xs text-gray-500 font-normal">- {subtitle}</span>}
+            <span className="ml-2 text-xs text-gray-400">({docs.length})</span>
+          </div>
+        </button>
+        <button onClick={onAddDoc} className="text-xs text-blue-600 hover:underline flex items-center gap-1 px-2">
+          <Icons.FilePlus /> Add Docs
+        </button>
+      </div>
+      
+      {expanded && (
+        <div className="divide-y">
+          {docs.length === 0 && <div className="p-4 text-center text-xs text-gray-400">No documents here.</div>}
+          {docs.map((doc: Doc) => {
+            const isSelected = selectedIds.has(doc.id);
+            return (
+              <div key={doc.id} className={`flex items-center p-3 gap-3 ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
+                <div className={`flex-shrink-0 ${isSelectMode ? 'w-6' : 'w-0 overflow-hidden'} transition-all`}>
+                  <button onClick={() => onToggle(doc.id)} className="text-gray-500 hover:text-blue-600">{isSelected ? <Icons.CheckSquare /> : <Icons.Square />}</button>
+                </div>
+                <div className="text-gray-400"><Icons.FileText /></div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-gray-700 truncate">{doc.original_name}</div>
+                  <div className="text-xs text-gray-400">{new Date(doc.created_at).toLocaleDateString()} • {Math.round(doc.size / 1024)} KB</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Helper: Add Doc Modal
+function AddDocModal({ courseId, topicId, currentDocs, onClose, onSuccess }: any) {
+  const [allDocs, setAllDocs] = useState<Doc[]>([]);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.get("/api/files/mine").then(({ data }) => {
+      // Filter out docs already in this course/topic to avoid redundancy? 
+      // Or simply list all "Unassigned" or "Available". 
+      // For now, list ALL docs that aren't ALREADY in this exact spot.
+      const currentIds = new Set(currentDocs.map((d: Doc) => d.id));
+      // Actually, we want to allow moving docs from other courses too? Or just unassigned?
+      // Let's just show everything not currently in THIS specific topic/course slot.
+      setAllDocs(data.items.filter((d: Doc) => !currentIds.has(d.id)));
+    });
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await Promise.all(Array.from(selected).map(id => api.post(`/api/files/${id}/assign`, { course_id: courseId, topic_id: topicId })));
+      onSuccess();
+      onClose();
+    } catch { alert("Failed"); } finally { setSaving(false); }
+  }
 
   return (
-    <div className="space-y-2">
-      {docs.map((doc) => (
-        <div
-          key={doc.id}
-          className="rounded border bg-white p-3 flex items-center justify-between"
-        >
-          <div>
-            <a
-              href={apiHref(`/api/files/view/${doc.id}`)}
-              target="_blank"
-              rel="noreferrer"
-              className="font-medium text-blue-600 hover:underline"
-            >
-              {doc.original_name}
-            </a>
-            <div className="text-[11px] text-gray-500">
-              {new Date(doc.created_at).toLocaleString()} •{" "}
-              {Math.round(doc.size / 1024)} KB
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2 justify-end">
-            <button
-              onClick={() =>
-                nav(`/docs/${doc.id}?tab=summary`, {
-                  state: { docName: doc.original_name },
-                })
-              }
-              className="px-2 py-1 bg-white border rounded text-xs hover:bg-gray-50"
-            >
-              Summary
-            </button>
-            <button
-              onClick={() =>
-                nav(`/docs/${doc.id}?tab=flashcards`, {
-                  state: { docName: doc.original_name },
-                })
-              }
-              className="px-2 py-1 bg-white border rounded text-xs hover:bg-gray-50"
-            >
-              Flashcards
-            </button>
-            <button
-              onClick={() =>
-                nav(`/docs/${doc.id}?tab=quizzes`, {
-                  state: { docName: doc.original_name },
-                })
-              }
-              className="px-2 py-1 bg-white border rounded text-xs hover:bg-gray-50"
-            >
-              Quizzes
-            </button>
-          </div>
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 flex flex-col max-h-[80vh]">
+        <h3 className="text-lg font-bold mb-4">Add Documents</h3>
+        <div className="flex-1 overflow-y-auto border rounded p-2 space-y-2">
+          {allDocs.map(d => (
+            <label key={d.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer">
+              <input type="checkbox" checked={selected.has(d.id)} onChange={() => setSelected(p => { const n = new Set(p); if(n.has(d.id)) n.delete(d.id); else n.add(d.id); return n; })} />
+              <span className="text-sm truncate">{d.original_name}</span>
+            </label>
+          ))}
+          {allDocs.length === 0 && <div className="text-gray-400 text-sm text-center">No other documents found.</div>}
         </div>
-      ))}
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+          <button onClick={save} disabled={saving || selected.size===0} className="px-4 py-2 text-sm bg-blue-600 text-white rounded disabled:opacity-50">Add Selected</button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,19 +1,33 @@
 // frontend/src/pages/DocDetailsPage.tsx
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
-import ProgressOverlay from "../components/ProgressOverlay";
+import GenerateModal from "../components/GenerateModal";
+import { AttemptsModal } from "../components/LibraryModals";
 
+// --- Types ---
 type QuizItem = {
   quiz_id: number;
   title: string;
-  document_id: number;
-  document_name: string;
   created_at: string;
   attempts: number;
 };
 
-type Tab = "quizzes" | "flashcards" | "summary";
+type FlashcardSetItem = {
+  id: number;
+  title: string;
+  created_at: string;
+  count: number;
+};
+
+// --- Icons ---
+const Icons = {
+  Back: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>,
+  Quiz: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>,
+  Card: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>,
+  FileText: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>,
+  Plus: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>,
+};
 
 export default function DocDetailsPage() {
   const { id } = useParams();
@@ -21,341 +35,132 @@ export default function DocDetailsPage() {
   const nav = useNavigate();
   const location = useLocation();
   const state = location.state as { docName?: string } | null;
-  const docName = state?.docName || `Document #${docId}`;
-
-  const [quizGenerating, setQuizGenerating] = useState(false);
-  const [showQuizProgress, setShowQuizProgress] = useState(false);
-
-  const [activeTab, setActiveTab] = useState<Tab>("quizzes");
-  const [quizzes, setQuizzes] = useState<QuizItem[]>([]);
+  
+  // State
+  const [docName, setDocName] = useState(state?.docName || "Document");
+  const [activeTab, setActiveTab] = useState<"quizzes" | "flashcards" | "summary">("quizzes");
   const [loading, setLoading] = useState(true);
 
-  const [summaryText, setSummaryText] = useState<string | null>(null);
-  const [summaryUpdatedAt, setSummaryUpdatedAt] = useState<string | null>(null);
-  const [summaryLoading, setSummaryLoading] = useState(false);
+  // Data
+  const [quizzes, setQuizzes] = useState<QuizItem[]>([]);
+  const [flashsets, setFlashsets] = useState<FlashcardSetItem[]>([]);
+  const [summary, setSummary] = useState<{ content: string; created_at: string } | null>(null);
 
-  const [flashcardSets, setFlashcardSets] = useState<
-    { id: number; title: string; document_id: number; created_at: string | null; count: number }[]
-  >([]);
-  const [flashLoading, setFlashLoading] = useState(false);
+  // Action States
+  const [activeGenType, setActiveGenType] = useState<"quiz" | "flashcards" | "summary" | null>(null);
+  const [viewAttemptsQuiz, setViewAttemptsQuiz] = useState<{ id: number; title: string } | null>(null);
 
+  // Flashcard Study State
   const [activeSetId, setActiveSetId] = useState<number | null>(null);
-  const [cards, setCards] = useState<{ id: number; front: string; back: string }[]>([]);
-  const [flippedById, setFlippedById] = useState<Record<number, boolean>>({});
+  const [activeCards, setActiveCards] = useState<any[]>([]);
+  const [flipped, setFlipped] = useState<Record<number, boolean>>({});
 
-  const [summaryEverLoaded, setSummaryEverLoaded] = useState(false);
-  const [flashcardsEverLoaded, setFlashcardsEverLoaded] = useState(false);
-
-  
-  // Sync activeTab with the ?tab= query param if present
+  // --- Loaders ---
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const tab = params.get("tab");
-
-    if (tab === "summary" || tab === "flashcards" || tab === "quizzes") {
-      setActiveTab(tab as Tab);
-    }
+    if (tab === "summary" || tab === "flashcards" || tab === "quizzes") setActiveTab(tab as any);
   }, [location.search]);
 
-  useEffect(() => {
-    if (!docId || Number.isNaN(docId)) return;
-
-    if (activeTab === "summary") {
-      // Auto-load summary once when you first land on the Summary tab
-      if (!summaryEverLoaded && !summaryLoading) {
-        loadSummaryIfNeeded();
-      }
-    } else if (activeTab === "flashcards") {
-      // Auto-load flashcards once when you first land on the Flashcards tab
-      if (!flashcardsEverLoaded && !flashLoading) {
-        loadFlashcardSets();
-      }
-    }
-    // Quizzes tab already has its own loader
-  }, [
-    activeTab,
-    docId,
-    summaryEverLoaded,
-    summaryLoading,
-    flashcardsEverLoaded,
-    flashLoading,
-  ]);
-
-
-  useEffect(() => {
-    if (!docId || Number.isNaN(docId)) return;
-    setLoading(true);
-    api
-      .get("/api/quizzes/mine", { params: { document_id: docId } })
-      .then(({ data }) => setQuizzes(data.items || []))
-      .catch(() => setQuizzes([]))
-      .finally(() => setLoading(false));
-  }, [docId]);
-
-  async function refreshQuizzes() {
-    if (!docId || Number.isNaN(docId)) return;
-    setLoading(true);
+  const loadAll = useCallback(async () => {
+    if (!docId) return;
     try {
-      const { data } = await api.get("/api/quizzes/mine", {
-        params: { document_id: docId },
-      });
-      setQuizzes(data.items || []);
-    } catch {
-      setQuizzes([]);
+      // Fetch all data in parallel
+      const [qRes, fRes, sListRes, dRes] = await Promise.all([
+        api.get("/api/quizzes/mine", { params: { document_id: docId } }),
+        api.get("/api/flashcards", { params: { document_id: docId } }),
+        api.get("/api/summaries", { params: { document_id: docId } }), // Get list of summaries
+        !state?.docName ? api.get("/api/files/mine").then(r => r.data.items.find((d:any) => d.id===docId)) : Promise.resolve(null)
+      ]);
+
+      setQuizzes(qRes.data.items || []);
+      setFlashsets(fRes.data.items || []);
+      
+      // Handle Summary: The list endpoint returns an array of summaries.
+      // We want to display the MOST RECENT one for this document.
+      const summaries = sListRes.data.items || [];
+      if (summaries.length > 0) {
+        const latestSummaryId = summaries[0].id;
+        // Fetch full content for this summary (since list might only have preview)
+        const detailRes = await api.get(`/api/summaries/${latestSummaryId}`);
+        setSummary({ 
+            content: detailRes.data.summary || detailRes.data.content, 
+            created_at: detailRes.data.created_at 
+        });
+      } else {
+        setSummary(null);
+      }
+
+      if (dRes) setDocName(dRes.original_name);
+
+    } catch (e) {
+      console.error("Error loading document details:", e);
     } finally {
       setLoading(false);
     }
-  }
+  }, [docId, state?.docName]);
 
   useEffect(() => {
-    refreshQuizzes();
-  }, [docId]);
+    loadAll();
+  }, [loadAll]);
 
-  async function generateQuizForDoc() {
-    if (!docId || Number.isNaN(docId)) return;
-    setQuizGenerating(true);
-    setShowQuizProgress(true);
-    try {
-      const { data } = await api.post("/api/quizzes/generate", {
-        document_id: docId,
-        title: "Auto Quiz",
-        n: 5,
-      });
-      // Refresh the list so the new quiz appears in the tab
-      await refreshQuizzes();
-      // Optionally navigate straight to the quiz:
-      nav(`/quiz?quizId=${data.quiz_id}`);
-    } catch (e: any) {
-      const status = e?.response?.status;
-      const msg = e?.response?.data?.error || "Failed to generate quiz";
-      if (status === 410) {
-        alert(`${msg}\n\nTip: Re-upload this document and try again.`);
-      } else {
-        alert(msg);
-      }
-    } finally {
-      setQuizGenerating(false);
-      setShowQuizProgress(false);
-    }
-  }
-
-  async function viewAttempts(quizId: number) {
-    const { data } = await api.get(`/api/quizzes/${quizId}/attempts`);
-    const text =
-      data.items
-        ?.map((a: any) => `${new Date(a.created_at).toLocaleString()}: ${a.score_pct}%`)
-        .join("\n") || "No attempts yet.";
-    alert(text);
-  }
-
-  async function loadSummaryIfNeeded() {
-    if (!docId || Number.isNaN(docId)) return;
-    setSummaryLoading(true);
-    try {
-      const { data } = await api.get(`/api/summaries/${docId}`);
-      setSummaryText(data.summary || null);
-      setSummaryUpdatedAt(data.created_at || null);
-    } catch (e: any) {
-      const status = e?.response?.status;
-      if (status === 404) {
-        // no summary yet → keep null
-        setSummaryText(null);
-        setSummaryUpdatedAt(null);
-      } else {
-        alert(e?.response?.data?.error || "Failed to load summary");
-      }
-    } finally {
-      setSummaryLoading(false);
-      setSummaryEverLoaded(true);   // <-- mark that we've attempted at least once
-    }
-  }
-
-
-  async function generateSummary() {
-    if (!docId || Number.isNaN(docId)) return;
-    setSummaryLoading(true);
-    try {
-      const { data } = await api.post("/api/summaries/generate", {
-        document_id: docId,
-      });
-      setSummaryText(data.summary || null);
-      setSummaryUpdatedAt(data.created_at || null);
-    } catch (e: any) {
-      alert(e?.response?.data?.error || "Summary generation failed");
-    } finally {
-      setSummaryLoading(false);
-    }
-  }
-
-  async function loadFlashcardSets() {
-    if (!docId || Number.isNaN(docId)) return;
-    setFlashLoading(true);
-    try {
-      const { data } = await api.get("/api/flashcards", {
-        params: { document_id: docId },
-      });
-      setFlashcardSets(data.items || []);
-    } catch (e: any) {
-      alert(e?.response?.data?.error || "Failed to load flashcards");
-      setFlashcardSets([]);
-    } finally {
-      setFlashLoading(false);
-      setFlashcardsEverLoaded(true);  // <-- mark one-time load attempt
-    }
-  }
-
-
-  async function loadSetCards(setId: number) {
-    setFlashLoading(true);
+  // --- Flashcard Logic ---
+  async function openFlashcardSet(setId: number) {
+    setActiveSetId(setId);
     try {
       const { data } = await api.get(`/api/flashcards/set/${setId}`);
-      setActiveSetId(setId);
-      setCards(data.cards || []);
-      setFlippedById({});   // reset flip state when a new set is opened
-    } catch (e: any) {
-      alert(e?.response?.data?.error || "Failed to load flashcard set");
-      setCards([]);
-      setActiveSetId(null);
-      setFlippedById({});
-    } finally {
-      setFlashLoading(false);
+      setActiveCards(data.cards || []);
+      setFlipped({});
+    } catch (e) {
+      alert("Failed to load cards.");
     }
   }
 
-
-  async function generateFlashcards() {
-    if (!docId || Number.isNaN(docId)) return;
-    setFlashLoading(true);
-    try {
-      const { data } = await api.post("/api/flashcards/generate", {
-        document_id: docId,
-        n: 12,
-      });
-      // After generating, reload sets and auto-open the new one
-      await loadFlashcardSets();
-      if (data.set_id) {
-        await loadSetCards(data.set_id);
-      }
-    } catch (e: any) {
-      alert(e?.response?.data?.error || "Flashcard generation failed");
-    } finally {
-      setFlashLoading(false);
-    }
-  }
-
-
+  if (loading) return <div className="p-10 text-center text-gray-500">Loading document details...</div>;
 
   return (
-    <div className="space-y-4">
+    <div className="max-w-5xl mx-auto pb-20">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold break-all">{docName}</h2>
-          <div className="text-xs text-gray-500">Document details</div>
-        </div>
-        <button
-          onClick={() => nav("/docs")}
-          className="text-sm text-blue-600 hover:underline"
-        >
-          ← Back to My Documents
+      <div className="mb-8">
+        <button onClick={() => nav("/docs")} className="text-sm text-gray-500 hover:text-gray-800 flex items-center gap-1 mb-2 transition-colors">
+          <Icons.Back /> Back to Documents
         </button>
+        <h1 className="text-3xl font-bold text-gray-900">{docName}</h1>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b text-sm">
-        <button
-          onClick={() => setActiveTab("quizzes")}
-          className={
-            "px-3 py-2 -mb-px border-b-2 " +
-            (activeTab === "quizzes"
-              ? "border-blue-600 text-blue-600"
-              : "border-transparent text-gray-600 hover:text-blue-600")
-          }
-        >
-          Quizzes
-        </button>
-        <button
-          onClick={() => {
-            setActiveTab("flashcards");
-            loadFlashcardSets();
-          }}
-          className={
-            "px-3 py-2 -mb-px border-b-2 " +
-            (activeTab === "flashcards"
-              ? "border-blue-600 text-blue-600"
-              : "border-transparent text-gray-600 hover:text-blue-600")
-          }
-        >
-          Flashcards
-        </button>
-        <button
-          onClick={() => {
-            setActiveTab("summary");
-            loadSummaryIfNeeded();
-          }}
-          className={
-            "px-3 py-2 -mb-px border-b-2 " +
-            (activeTab === "summary"
-              ? "border-blue-600 text-blue-600"
-              : "border-transparent text-gray-600 hover:text-blue-600")
-          }
-        >
-          Summary
-        </button>
+      <div className="flex border-b mb-6">
+        <TabButton label="Quizzes" icon={<Icons.Quiz />} active={activeTab==="quizzes"} onClick={() => setActiveTab("quizzes")} />
+        <TabButton label="Flashcards" icon={<Icons.Card />} active={activeTab==="flashcards"} onClick={() => setActiveTab("flashcards")} />
+        <TabButton label="Summary" icon={<Icons.FileText />} active={activeTab==="summary"} onClick={() => setActiveTab("summary")} />
       </div>
 
-      {/* Tab content */}
+      {/* --- QUIZZES TAB --- */}
       {activeTab === "quizzes" && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-gray-700">
-              {quizzes.length
-                ? `You have ${quizzes.length} quiz${quizzes.length > 1 ? "zes" : ""} for this document.`
-                : "No quizzes yet for this document."}
-            </div>
-            <button
-              onClick={generateQuizForDoc}
-              disabled={quizGenerating}
-              className="px-4 py-2 bg-emerald-600 text-white text-sm rounded disabled:opacity-50 hover:bg-emerald-700"
-            >
-              {quizGenerating ? "Generating…" : quizzes.length ? "Generate another quiz" : "Generate first quiz"}
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+          <div className="flex justify-between items-center">
+            <h2 className="text-lg font-semibold text-gray-700">Available Quizzes</h2>
+            <button onClick={() => setActiveGenType("quiz")} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition shadow-sm flex items-center gap-2">
+              <Icons.Plus /> Generate Quiz
             </button>
           </div>
 
-          {loading ? (
-            <div>Loading quizzes…</div>
-          ) : !quizzes.length ? (
-            <div className="text-sm text-gray-500">
-              After you generate a quiz, it will appear here.
-            </div>
+          {quizzes.length === 0 ? (
+            <EmptyState msg="No quizzes yet. Generate one to test your knowledge." />
           ) : (
-            <div className="space-y-2">
-              {quizzes.map((q, idx) => (
-                <div
-                  key={q.quiz_id}
-                  className="rounded border bg-white p-3 flex items-center justify-between"
-                >
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {quizzes.map((q) => (
+                <div key={q.quiz_id} className="bg-white border rounded-xl p-5 hover:shadow-md transition flex flex-col justify-between h-40">
                   <div>
-                    <div className="font-medium">
-                      {/* Point 4: show Quiz 1 / Quiz 2 instead of Auto Quiz */}
-                      {`Quiz ${quizzes.length - idx}`}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {new Date(q.created_at).toLocaleString()} • Attempts: {q.attempts}
-                    </div>
+                    <div className="text-sm font-medium text-gray-900 mb-1 line-clamp-2">{q.title}</div>
+                    <div className="text-xs text-gray-500">{new Date(q.created_at).toLocaleDateString()}</div>
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => nav(`/quiz?quizId=${q.quiz_id}`)}
-                      className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
-                    >
-                      Open
+                  <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                    <button onClick={() => setViewAttemptsQuiz({ id: q.quiz_id, title: q.title })} className="text-xs text-blue-600 hover:underline">
+                      {q.attempts} Attempt{q.attempts!==1?'s':''}
                     </button>
-                    <button
-                      onClick={() => viewAttempts(q.quiz_id)}
-                      className="px-3 py-1 border border-gray-300 text-xs rounded hover:bg-gray-100"
-                    >
-                      Attempts
+                    <button onClick={() => nav(`/quiz?quizId=${q.quiz_id}`)} className="px-3 py-1.5 bg-blue-50 text-blue-700 text-xs font-medium rounded-md hover:bg-blue-100 transition">
+                      Start Quiz
                     </button>
                   </div>
                 </div>
@@ -365,166 +170,176 @@ export default function DocDetailsPage() {
         </div>
       )}
 
+      {/* --- FLASHCARDS TAB --- */}
       {activeTab === "flashcards" && (
-        <div className="space-y-4">
-          {flashLoading && (
-            <div className="text-sm text-gray-600">Working on flashcards…</div>
-          )}
-
-          {/* Summary + generate button */}
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-gray-700">
-              {flashcardSets.length
-                ? `You have ${flashcardSets.length} set${flashcardSets.length > 1 ? "s" : ""} for this document.`
-                : "No flashcards yet for this document."}
-            </div>
-            <button
-              onClick={generateFlashcards}
-              disabled={flashLoading}
-              className="px-4 py-2 bg-emerald-600 text-white text-sm rounded disabled:opacity-50 hover:bg-emerald-700"
-            >
-              {flashcardSets.length ? "Generate another set" : "Generate flashcards"}
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+          <div className="flex justify-between items-center">
+            <h2 className="text-lg font-semibold text-gray-700">Flashcard Sets</h2>
+            <button onClick={() => setActiveGenType("flashcards")} className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700 transition shadow-sm flex items-center gap-2">
+              <Icons.Plus /> New Set
             </button>
           </div>
 
-          {/* List of sets; clicking a set shows its cards directly underneath */}
-          {flashcardSets.length > 0 && (
-            <div className="space-y-2">
-              {flashcardSets.map((s) => (
-                <div key={s.id} className="rounded border bg-white px-3 py-2">
+          {flashsets.length === 0 ? (
+            <EmptyState msg="No flashcards yet. Generate a set to start memorizing." />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* List of Sets */}
+              <div className="md:col-span-1 space-y-2">
+                {flashsets.map(s => (
                   <button
-                    onClick={() => loadSetCards(s.id)}
-                    className="flex w-full items-center justify-between text-left text-sm"
+                    key={s.id}
+                    onClick={() => openFlashcardSet(s.id)}
+                    className={`w-full text-left p-3 rounded-lg border transition ${activeSetId === s.id ? "bg-emerald-50 border-emerald-200 ring-1 ring-emerald-200" : "bg-white hover:bg-gray-50"}`}
                   >
-                    <div>
-                      <div className="font-medium">{s.title}</div>
-                      <div className="text-xs text-gray-500">
-                        {new Date(s.created_at || "").toLocaleString()} • {s.count} cards
-                      </div>
-                    </div>
-                    <div className="text-xs text-blue-600">
-                      {activeSetId === s.id ? "Hide cards" : "View cards"}
-                    </div>
+                    <div className="text-sm font-medium text-gray-900">{s.title}</div>
+                    <div className="text-xs text-gray-500 mt-1">{s.count} Cards • {new Date(s.created_at).toLocaleDateString()}</div>
                   </button>
+                ))}
+              </div>
 
-                  {/* Cards for the active set appear right under that set */}
-                  {activeSetId === s.id && cards.length > 0 && (
-                    <div className="mt-3 space-y-2">
-                      <div className="text-xs text-gray-500">
-                        Click any card to flip between front and back.
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        {cards.map((c) => {
-                          const isFlipped = !!flippedById[c.id];
-                          return (
-                            <div
-                              key={c.id}
-                              className="relative h-36 [perspective:1000px] cursor-pointer"
-                              onClick={() =>
-                                setFlippedById((prev) => ({
-                                  ...prev,
-                                  [c.id]: !prev[c.id],
-                                }))
-                              }
-                            >
-                              <div
-                                className="relative w-full h-full rounded-xl border bg-white shadow-sm"
-                                style={{
-                                  transformStyle: "preserve-3d",
-                                  transform: isFlipped ? "rotateY(180deg)" : "rotateY(0deg)",
-                                  transition: "transform 0.4s ease",
-                                }}
-                              >
-                                {/* Front */}
-                                <div
-                                  className="absolute inset-0 flex flex-col justify-center px-3 py-2"
-                                  style={{ backfaceVisibility: "hidden" }}
-                                >
-                                  <div className="text-[10px] uppercase text-gray-500 mb-1">
-                                    Front
-                                  </div>
-                                  <div className="text-sm whitespace-pre-wrap line-clamp-5">
-                                    {c.front}
-                                  </div>
-                                </div>
-
-                                {/* Back */}
-                                <div
-                                  className="absolute inset-0 flex flex-col justify-center px-3 py-2"
-                                  style={{
-                                    backfaceVisibility: "hidden",
-                                    transform: "rotateY(180deg)",
-                                  }}
-                                >
-                                  <div className="text-[10px] uppercase text-gray-500 mb-1">
-                                    Back
-                                  </div>
-                                  <div className="text-sm whitespace-pre-wrap line-clamp-5">
-                                    {c.back}
-                                  </div>
-                                </div>
-                              </div>
+              {/* Active Set View */}
+              <div className="md:col-span-2">
+                {activeSetId && activeCards.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {activeCards.map(c => {
+                      const isFlipped = !!flipped[c.id];
+                      return (
+                        <div key={c.id} onClick={() => setFlipped(p => ({...p, [c.id]: !p[c.id]}))} className="relative h-48 cursor-pointer [perspective:1000px] group">
+                          <div className={`relative w-full h-full transition-all duration-500 [transform-style:preserve-3d] ${isFlipped ? "[transform:rotateY(180deg)]" : ""}`}>
+                            <div className="absolute inset-0 bg-white border rounded-xl p-4 shadow-sm flex flex-col justify-between [backface-visibility:hidden]">
+                              <div className="text-[10px] uppercase text-gray-400 font-bold">Front</div>
+                              <div className="text-sm text-center font-medium text-gray-800 line-clamp-4">{c.front}</div>
+                              <div className="text-xs text-center text-gray-300 group-hover:text-gray-400">Click to flip</div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
+                            <div className="absolute inset-0 bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-sm flex flex-col justify-between [transform:rotateY(180deg)] [backface-visibility:hidden]">
+                              <div className="text-[10px] uppercase text-slate-500 font-bold">Back</div>
+                              <div className="text-sm text-center text-slate-200 leading-relaxed line-clamp-5">{c.back}</div>
+                              <div className="text-xs text-center text-slate-600">Click to return</div>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-gray-400 border-2 border-dashed rounded-xl min-h-[200px]">
+                    Select a set to view cards
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
       )}
 
+      {/* --- SUMMARY TAB --- */}
       {activeTab === "summary" && (
-        <div className="space-y-3">
-          {summaryLoading && (
-            <div className="text-sm text-gray-600">
-              {summaryText ? "Updating summary…" : "Generating summary…"}
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+          <div className="flex justify-between items-center">
+            <h2 className="text-lg font-semibold text-gray-700">Document Summary</h2>
+            <button onClick={() => setActiveGenType("summary")} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition shadow-sm flex items-center gap-2">
+              <Icons.Plus /> {summary ? "Regenerate" : "Generate"}
+            </button>
+          </div>
+
+          {!summary ? (
+            <EmptyState msg="No summary generated yet." />
+          ) : (
+            <div className="bg-white border rounded-xl p-8 shadow-sm">
+              {/* Here is the fix: Rendering content nicely */}
+              <SimpleMarkdown content={summary.content} />
+              <div className="mt-6 pt-4 border-t text-xs text-gray-400 text-right">
+                Generated on {new Date(summary.created_at).toLocaleString()}
+              </div>
             </div>
           )}
-
-          {!summaryLoading && !summaryText && (
-            <div className="text-sm text-gray-700">
-              No summary has been generated for this document yet.
-            </div>
-          )}
-
-          {summaryText && (
-            <div className="rounded border bg-white p-4 text-sm leading-relaxed whitespace-pre-wrap">
-              {summaryText}
-              {summaryUpdatedAt && (
-                <div className="mt-2 text-xs text-gray-500">
-                  Last updated: {new Date(summaryUpdatedAt).toLocaleString()}
-                </div>
-              )}
-            </div>
-          )}
-
-          <button
-            onClick={generateSummary}
-            disabled={summaryLoading}
-            className="px-4 py-2 bg-blue-600 text-white text-sm rounded disabled:opacity-50 hover:bg-blue-700"
-          >
-            {summaryText ? "Regenerate summary" : "Generate summary"}
-          </button>
         </div>
       )}
 
-      {showQuizProgress && (
-        <ProgressOverlay
-          title="Generating your quiz"
-          messages={[
-            "Extracting content…",
-            "Identifying key concepts…",
-            "Formulating questions…",
-            "Balancing distractors…",
-            "Finalizing quiz…",
-          ]}
+      {/* Unified Generation Modal */}
+      {activeGenType && (
+        <GenerateModal 
+          type={activeGenType} 
+          docIds={[docId]} 
+          onClose={() => setActiveGenType(null)}
+          onSuccess={() => {
+            // When generation finishes, we just reload the data so the new item appears
+            setActiveGenType(null);
+            loadAll();
+          }}
         />
       )}
 
+      {/* Attempts Modal */}
+      {viewAttemptsQuiz && (
+        <AttemptsModal 
+          quizId={viewAttemptsQuiz.id} 
+          quizTitle={viewAttemptsQuiz.title} 
+          onClose={() => setViewAttemptsQuiz(null)} 
+        />
+      )}
     </div>
   );
+}
+
+// --- Subcomponents ---
+
+function TabButton({ label, icon, active, onClick }: any) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-all border-b-2 ${
+        active 
+          ? "border-blue-600 text-blue-600" 
+          : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+      }`}
+    >
+      {icon} {label}
+    </button>
+  );
+}
+
+function EmptyState({ msg }: { msg: string }) {
+  return (
+    <div className="py-12 text-center bg-gray-50 rounded-xl border border-dashed border-gray-200">
+      <p className="text-gray-500">{msg}</p>
+    </div>
+  );
+}
+
+// A lightweight Markdown renderer (Zero dependency)
+function SimpleMarkdown({ content }: { content: string }) {
+  if (!content) return null;
+
+  // 1. Split by double newlines to find paragraphs
+  const paragraphs = content.split(/\n\n+/);
+
+  return (
+    <div className="space-y-4 text-gray-700 leading-relaxed">
+      {paragraphs.map((block, i) => {
+        // Check if block is a list
+        if (block.trim().startsWith("- ") || block.trim().startsWith("* ")) {
+          const items = block.split(/\n/).map(line => line.replace(/^[-*]\s+/, ""));
+          return (
+            <ul key={i} className="list-disc list-inside space-y-1 ml-2">
+              {items.map((item, j) => (
+                <li key={j} dangerouslySetInnerHTML={{ __html: formatInline(item) }} />
+              ))}
+            </ul>
+          );
+        }
+        // Regular paragraph
+        return <p key={i} dangerouslySetInnerHTML={{ __html: formatInline(block) }} />;
+      })}
+    </div>
+  );
+}
+
+// Basic formatter for **bold**
+function formatInline(text: string) {
+  // Escape HTML first to prevent injection
+  let safe = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // Replace **text** with <strong>text</strong>
+  return safe.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
 }

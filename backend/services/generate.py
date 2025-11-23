@@ -4,7 +4,6 @@ import re
 import os
 import time
 
-from backend.services.extract import read_document_text
 from backend.services.llm import llm_complete
 
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
@@ -56,11 +55,11 @@ IMPORTANT INSTRUCTIONS (must follow):
 
 _Q_BLOCK = re.compile(
     r"""
-    Q:\s*(?P<prompt>.+?)\s*          # question text
-    \n+\s*A\)\s*(?P<A>.+?)\s*        # option A
-    \n+\s*B\)\s*(?P<B>.+?)\s*        # option B
-    \n+\s*C\)\s*(?P<C>.+?)\s*        # option C
-    \n+\s*D\)\s*(?P<D>.+?)\s*        # option D
+    Q:\s*(?P<prompt>.+?)\s* # question text
+    \n+\s*A\)\s*(?P<A>.+?)\s* # option A
+    \n+\s*B\)\s*(?P<B>.+?)\s* # option B
+    \n+\s*C\)\s*(?P<C>.+?)\s* # option C
+    \n+\s*D\)\s*(?P<D>.+?)\s* # option D
     \n+\s*Answer:\s*(?P<ans>[ABCD])  # Answer letter
     (?:\n+\s*Explanation:\s*(?P<exp>.+?))?   # optional Explanation
     (?=(?:\n+---|\n+Q:|\Z))          # stop at --- or next Q: or end
@@ -69,12 +68,7 @@ _Q_BLOCK = re.compile(
 )
 
 def parse_mcqs(raw: str) -> List[Dict]:
-    """
-    Robustly parse MCQs in the exact format we requested.
-    - Tolerates CRLF or LF
-    - Supports multiline explanations (until next '---' or end)
-    - Ignores extra whitespace lines
-    """
+    print("[DEBUG] Parsing MCQs from raw output...")
     if not raw:
         return []
     text = raw.strip()
@@ -90,11 +84,11 @@ def parse_mcqs(raw: str) -> List[Dict]:
         ]
         ans_letter = m.group("ans").strip().upper()
 
-        # Explanation may be missing; make this robust
         exp_raw = m.group("exp") or ""
         explanation = re.sub(r"\s+\Z", "", exp_raw).strip() if exp_raw else ""
 
         if len(opts) != 4 or ans_letter not in ("A", "B", "C", "D"):
+            print(f"[DEBUG] Skipping malformed question or invalid answer letter: {ans_letter}")
             continue
 
         answer_text = opts[ord(ans_letter) - ord("A")]
@@ -106,27 +100,29 @@ def parse_mcqs(raw: str) -> List[Dict]:
                 "explanation": explanation,
             }
         )
+    print(f"[DEBUG] Parsed {len(out)} MCQs successfully.")
     return out
 
 
-def generate_mcqs_from_document(filename: str, n: int = 5, model: str = None) -> List[Dict]:
-    # Keep source short enough for small models, but with enough signal
-    source = read_document_text(filename)
+def generate_mcqs_from_source(source: str, n: int = 5) -> List[Dict]:
     if not source or len(source.split()) < 40:
-        return []  # not enough content — avoid hallucination
+        print("[DEBUG] Source too short for generation.")
+        return []
 
     prompt = PROMPT_TEMPLATE.format(system_hint=SYSTEM_HINT, source=source, n=n)
 
-    max_retries = 5
-    # Exponential backoff: 1s, 2s, 4s, 8s, 16s (after failures)
+    max_retries = 3
     for attempt in range(1, max_retries + 1):
         try:
+            print(f"[DEBUG] LLM Attempt {attempt}/{max_retries}...")
             raw = llm_complete(
                 prompt=prompt,
                 temperature=0.2,
-                max_tokens=1200,
+                max_tokens=1500,
             )
-        except Exception:
+            print(f"[DEBUG] LLM Output (first 200 chars): {raw[:200]}...")
+        except Exception as e:
+            print(f"[DEBUG] LLM Attempt {attempt} failed: {e}")
             if attempt == max_retries:
                 return []
             time.sleep(2 ** (attempt - 1))
@@ -136,12 +132,14 @@ def generate_mcqs_from_document(filename: str, n: int = 5, model: str = None) ->
         if mcqs:
             return mcqs[:n]
 
+        print("[DEBUG] Failed to parse MCQs from this attempt.")
         if attempt == max_retries:
             return []
         time.sleep(2 ** (attempt - 1))
 
     return []
 
+# ... (Keep Flashcard/Summary functions as they were, or add similar debugs if you like) ...
 # ============================
 # FLASHCARD GENERATION
 # ============================
@@ -168,23 +166,12 @@ Do not include any other text before or after the cards.
 Do not number the cards. Just repeat the pattern above {n} times.
 """
 
-# same pattern as you had in routes_flashcards.py
 _FLASHCARD_BLOCK = re.compile(
     r"Q:\s*(.+?)\s*A:\s*(.+?)(?=\nQ:|\Z)",
     re.IGNORECASE | re.DOTALL,
 )
 
 def parse_flashcards(raw: str) -> List[Dict[str, str]]:
-    """
-    Parse multiple flashcards from text in this pattern:
-
-    Q: <front>
-    A: <back>
-
-    Q: <front2>
-    A: <back2>
-    ...
-    """
     if not raw:
         return []
 
@@ -201,12 +188,8 @@ def parse_flashcards(raw: str) -> List[Dict[str, str]]:
 
 
 def generate_flashcards_from_source(source: str, n: int = 12) -> List[Dict[str, str]]:
-    """
-    Given cleaned source text, call the LLM and parse it into a list of flashcards.
-    The caller (route) is responsible for checking 'not enough text' and HTTP codes.
-    """
     prompt = FLASHCARD_PROMPT_TEMPLATE.format(source=source, n=n)
-    raw = llm_complete(prompt=prompt, max_tokens=800, temperature=0.25)
+    raw = llm_complete(prompt=prompt, max_tokens=1000, temperature=0.25)
     return parse_flashcards(raw)
 
 # ============================
@@ -221,7 +204,7 @@ Source text:
 {source}
 \"\"\"
 
-Write a concise summary for this document suitable for quick revision:
+Write a concise summary for this content suitable for quick revision:
 - 1–2 short paragraphs giving the big picture.
 - Then 3–6 bullet points with key ideas or facts.
 - Use simple language, no flowery writing.
@@ -229,10 +212,6 @@ Write a concise summary for this document suitable for quick revision:
 """
 
 def generate_summary_from_source(source: str) -> str:
-    """
-    Given cleaned source text, call the LLM and return a summary string.
-    The caller (route) is responsible for checking 'not enough text' and HTTP codes.
-    """
     prompt = SUMMARY_PROMPT_TEMPLATE.format(source=source)
-    text = llm_complete(prompt=prompt, max_tokens=600, temperature=0.25)
+    text = llm_complete(prompt=prompt, max_tokens=800, temperature=0.25)
     return (text or "").strip()
