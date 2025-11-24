@@ -204,14 +204,24 @@ Source text:
 {source}
 \"\"\"
 
-Write a concise summary for this content suitable for quick revision:
-- 1–2 short paragraphs giving the big picture.
-- Then 3–6 bullet points with key ideas or facts.
+Write a summary for this content.
+{style_instruction}
+
 - Use simple language, no flowery writing.
 - Do not mention that you are an AI.
 """
 
-def generate_summary_from_source(source: str) -> str:
-    prompt = SUMMARY_PROMPT_TEMPLATE.format(source=source)
-    text = llm_complete(prompt=prompt, max_tokens=800, temperature=0.25)
+def generate_summary_from_source(source: str, detail_level: str = "brief") -> str:
+    style_instruction = ""
+    max_tokens = 800
+    
+    if detail_level == "detailed":
+        style_instruction = "Write a detailed comprehensive summary with multiple sections and bullet points."
+        max_tokens = 5000
+    else:
+        style_instruction = "Write a concise summary with 1-2 paragraphs and a few key bullet points."
+        max_tokens = 1600
+
+    prompt = SUMMARY_PROMPT_TEMPLATE.format(source=source, style_instruction=style_instruction)
+    text = llm_complete(prompt=prompt, max_tokens=max_tokens, temperature=0.25)
     return (text or "").strip()

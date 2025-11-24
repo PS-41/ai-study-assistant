@@ -16,6 +16,11 @@ interface Props {
 export default function GenerateModal({ type, docIds, onClose, onSuccess }: Props) {
   const nav = useNavigate();
   const [title, setTitle] = useState("");
+  
+  // Config State
+  const [count, setCount] = useState(type === "quiz" ? 5 : 12);
+  const [summaryDetail, setSummaryDetail] = useState("brief");
+
   const [isBusy, setIsBusy] = useState(false);
   const [showProgress, setShowProgress] = useState(false);
 
@@ -38,17 +43,21 @@ export default function GenerateModal({ type, docIds, onClose, onSuccess }: Prop
     e.preventDefault();
     setIsBusy(true);
     
-    // Show the fun progress overlay for quizzes/flashcards as they take longer
     if (type !== "summary") setShowProgress(true);
 
     try {
       const finalTitle = title.trim() || defaultTitle;
-      const payload = {
+      const payload: any = {
         document_ids: docIds,
         title: finalTitle,
-        // specific params
-        n: type === "quiz" ? 5 : 12, 
       };
+      
+      // Add specific config
+      if (type === "quiz" || type === "flashcards") {
+          payload.n = count;
+      } else if (type === "summary") {
+          payload.detail_level = summaryDetail;
+      }
 
       let url = "";
       if (type === "quiz") url = "/api/quizzes/generate";
@@ -59,11 +68,8 @@ export default function GenerateModal({ type, docIds, onClose, onSuccess }: Prop
 
       // Handle Success
       if (type === "quiz") {
-        // Go straight to the quiz
         nav(`/quiz?quizId=${data.quiz_id}`);
       } else {
-        // For flashcards/summary, just close and alert for now
-        // (Since we don't have a dedicated "Multi-Doc Result Page" yet)
         alert(`${finalTitle} created successfully!`);
         onClose();
         if (onSuccess) onSuccess();
@@ -117,6 +123,61 @@ export default function GenerateModal({ type, docIds, onClose, onSuccess }: Prop
                 autoFocus
               />
             </div>
+
+            {/* Options for Quiz */}
+            {type === "quiz" && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Number of Questions
+                </label>
+                <select
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  value={count}
+                  onChange={(e) => setCount(Number(e.target.value))}
+                >
+                  <option value={5}>5 Questions</option>
+                  <option value={10}>10 Questions</option>
+                  <option value={15}>15 Questions</option>
+                  <option value={20}>20 Questions</option>
+                </select>
+              </div>
+            )}
+
+            {/* Options for Flashcards */}
+            {type === "flashcards" && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Number of Cards (Approx)
+                </label>
+                <select
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  value={count}
+                  onChange={(e) => setCount(Number(e.target.value))}
+                >
+                  <option value={8}>8 Cards</option>
+                  <option value={12}>12 Cards</option>
+                  <option value={16}>16 Cards</option>
+                  <option value={20}>20 Cards</option>
+                </select>
+              </div>
+            )}
+
+            {/* Options for Summary */}
+            {type === "summary" && (
+               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Detail Level
+                </label>
+                <select
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  value={summaryDetail}
+                  onChange={(e) => setSummaryDetail(e.target.value)}
+                >
+                  <option value="brief">Brief (Key Points)</option>
+                  <option value="detailed">Detailed (Comprehensive)</option>
+                </select>
+              </div>
+            )}
 
             <div className="flex justify-end gap-2 pt-2">
               <button
