@@ -2,7 +2,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { api } from "../lib/api";
 import { useNavigate } from "react-router-dom";
-import ProgressOverlay from "../components/ProgressOverlay";
 import GenerateModal from "../components/GenerateModal";
 import { CreateCourseModal, CreateTopicModal } from "../components/ResourceModals";
 

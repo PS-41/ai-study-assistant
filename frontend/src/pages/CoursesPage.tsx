@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import GenerateModal from "../components/GenerateModal";
 import { CreateCourseModal, CreateTopicModal } from "../components/ResourceModals";
-import { RenameModal, DeleteModal } from "../components/ActionModals"; // NEW
+import { RenameModal, DeleteModal } from "../components/ActionModals";
 
 const apiOrigin = import.meta.env.DEV ? "http://localhost:5000" : "";
 const apiHref = (path: string) => `${apiOrigin}${path}`;
@@ -27,14 +27,14 @@ const Icons = {
   FilePlus: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>,
   Zap: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>,
   ExternalLink: () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>,
-  Edit: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>,
+  Edit: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V4"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>,
   Trash: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>,
 };
 
 export default function CoursesPage() {
   const nav = useNavigate();
   const [courses, setCourses] = useState<Course[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true); // loading state removed, setter kept
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
   
   // Data Cache
@@ -88,7 +88,7 @@ export default function CoursesPage() {
       
       const tIds = (tRes.data.items || []).map((t:Topic) => String(t.id));
       setExpandedTopics(prev => {
-        const next = { ...prev, "none": true };
+        const next: Record<string, boolean> = { ...prev, "none": true };
         tIds.forEach((id:string) => next[id] = true);
         return next;
       });
@@ -187,7 +187,7 @@ export default function CoursesPage() {
     return currentDocs.every(d => selectedDocIds.has(d.id));
   };
 
-  const initiateAction = (action: "generate") => {
+  const initiateAction = () => {
     if (selectedDocIds.size > 0) {
       setActiveGenType("quiz");
     } else {
@@ -250,7 +250,7 @@ export default function CoursesPage() {
               </div>
               <div className="flex gap-2 items-center">
                 <div className="flex items-center gap-2 bg-white p-1 border rounded-lg shadow-sm mr-2">
-                  <button onClick={() => initiateAction("generate")} className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md transition">
+                  <button onClick={initiateAction} className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md transition">
                     <Icons.Zap /> Generate
                   </button>
                   <div className="w-px h-5 bg-gray-300"></div>
@@ -316,7 +316,7 @@ export default function CoursesPage() {
 
       {/* Modals */}
       {showCourseModal && <CreateCourseModal onClose={()=>setShowCourseModal(false)} onSuccess={(c)=>{setCourses(p=>[...p, c]); setSelectedCourseId(c.id);}} />}
-      {showTopicModal && selectedCourseId && <CreateTopicModal courseId={selectedCourseId} onClose={()=>setShowTopicModal(false)} onSuccess={(t)=>reloadCourseDetails(selectedCourseId!)} />}
+      {showTopicModal && selectedCourseId && <CreateTopicModal courseId={selectedCourseId} onClose={()=>setShowTopicModal(false)} onSuccess={() => reloadCourseDetails(selectedCourseId!)} />}
       {activeGenType && <GenerateModal type={activeGenType} docIds={Array.from(selectedDocIds)} onClose={()=>setActiveGenType(null)} onSuccess={()=>{setSelectedDocIds(new Set()); setIsSelectMode(false); setPromptMode(null);}} />}
       
       {showAddDocModal && selectedCourseId && (
@@ -346,7 +346,6 @@ export default function CoursesPage() {
 
 // Helper: Topic Section
 function TopicSection({ title, subtitle, docs, isSelectMode, selectedIds, onToggle, onToggleBatch, expanded, onToggleExpand, onAddDoc, onRename, onDelete }: any) {
-  const nav = useNavigate();
   const allSelected = docs.length > 0 && docs.every((d:Doc) => selectedIds.has(d.id));
 
   return (
