@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import GenerateModal from "../components/GenerateModal";
 import AssignModal from "../components/AssignModal";
+import { RenameModal, DeleteModal } from "../components/ActionModals";
 
 const apiOrigin = import.meta.env.DEV ? "http://localhost:5000" : "";
 const apiHref = (path: string) => `${apiOrigin}${path}`;
@@ -16,7 +17,9 @@ const Icons = {
   X: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>,
   Zap: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>,
   FolderPlus: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>,
-  ExternalLink: () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+  ExternalLink: () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>,
+  Edit: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V4"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>,
+  Trash: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>,
 };
 
 type Doc = {
@@ -45,6 +48,8 @@ export default function DocsPage() {
   // Action Modals
   const [activeGenType, setActiveGenType] = useState<"quiz"|"flashcards"|"summary"|null>(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const [renamingDoc, setRenamingDoc] = useState<Doc | null>(null);
+  const [deletingDoc, setDeletingDoc] = useState<Doc | null>(null);
   
   // Prompts
   const [promptMode, setPromptMode] = useState<string|null>(null); 
@@ -76,6 +81,19 @@ export default function DocsPage() {
       setIsSelectMode(true);
       setPromptMode(action === "assign" ? "Select documents to Assign" : "Select documents to Generate Content");
     }
+  };
+
+  const handleRename = async (newName: string) => {
+    if (!renamingDoc) return;
+    await api.put(`/api/files/${renamingDoc.id}`, { name: newName });
+    setItems(prev => prev.map(d => d.id === renamingDoc.id ? { ...d, original_name: newName } : d));
+  };
+
+  const handleDelete = async () => {
+    if (!deletingDoc) return;
+    await api.delete(`/api/files/${deletingDoc.id}`);
+    setItems(prev => prev.filter(d => d.id !== deletingDoc.id));
+    if (selectedIds.has(deletingDoc.id)) toggleSelection(deletingDoc.id);
   };
 
   if (loading) return <div className="p-8 text-gray-500">Loading documents...</div>;
@@ -137,7 +155,7 @@ export default function DocsPage() {
                 <div 
                   key={doc.id} 
                   onClick={() => isSelectMode && toggleSelection(doc.id)}
-                  className={`flex items-center p-4 gap-4 transition-colors cursor-pointer ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                  className={`group flex items-center p-4 gap-4 transition-colors cursor-pointer ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
                 >
                   {/* Selection Box */}
                   <div className={`flex-shrink-0 ${isSelectMode ? 'w-6 opacity-100' : 'w-0 opacity-0 overflow-hidden'} transition-all duration-200`}>
@@ -191,6 +209,11 @@ export default function DocsPage() {
                       <button onClick={(e) => { e.stopPropagation(); nav(`/docs/${doc.id}?tab=summary`); }} className="px-3 py-1.5 text-xs border rounded hover:bg-white text-gray-700">
                         Summary
                       </button>
+                      
+                      {/* Edit/Delete */}
+                      <div className="w-px h-4 bg-gray-300 mx-1"></div>
+                      <button onClick={(e) => { e.stopPropagation(); setRenamingDoc(doc); }} className="p-1.5 text-gray-400 hover:text-blue-600 rounded hover:bg-gray-100" title="Rename"><Icons.Edit /></button>
+                      <button onClick={(e) => { e.stopPropagation(); setDeletingDoc(doc); }} className="p-1.5 text-gray-400 hover:text-red-600 rounded hover:bg-gray-100" title="Delete"><Icons.Trash /></button>
                     </div>
                   )}
                 </div>
@@ -247,6 +270,9 @@ export default function DocsPage() {
           }}
         />
       )}
+
+      {renamingDoc && <RenameModal title="Rename Document" currentName={renamingDoc.original_name} onClose={()=>setRenamingDoc(null)} onRename={handleRename} />}
+      {deletingDoc && <DeleteModal title="Delete Document" message={`Are you sure you want to delete "${deletingDoc.original_name}"? This cannot be undone.`} onClose={()=>setDeletingDoc(null)} onConfirm={handleDelete} />}
     </div>
   );
 }

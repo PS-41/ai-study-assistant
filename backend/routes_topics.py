@@ -86,3 +86,32 @@ def topics_by_course(course_id):
             "created_at": t.created_at.isoformat() if t.created_at else None,
         })
     return jsonify({"items": items})
+
+@bp.put("/<int:topic_id>")
+@auth_required
+def update_topic(topic_id):
+    db = get_db()
+    t = db.query(Topic).filter_by(id=topic_id).first()
+    if not t or t.user_id != g.user_id:
+        return jsonify({"error": "topic not found or forbidden"}), 404
+    
+    data = request.get_json()
+    if "name" in data:
+        t.name = data["name"].strip()
+    if "description" in data:
+        t.description = data["description"].strip()
+    
+    db.commit()
+    return jsonify({"id": t.id, "name": t.name})
+
+@bp.delete("/<int:topic_id>")
+@auth_required
+def delete_topic(topic_id):
+    db = get_db()
+    t = db.query(Topic).filter_by(id=topic_id).first()
+    if not t or t.user_id != g.user_id:
+        return jsonify({"error": "topic not found or forbidden"}), 404
+
+    db.delete(t)
+    db.commit()
+    return jsonify({"ok": True})

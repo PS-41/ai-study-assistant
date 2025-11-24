@@ -264,3 +264,46 @@ def assign_document(doc_id: int):
         "course_id": doc.course_id,
         "topic_id": doc.topic_id,
     })
+
+@bp.put("/<int:doc_id>")
+@auth_required
+def rename_document(doc_id):
+    db = get_db()
+    doc = db.query(Document).filter_by(id=doc_id).first()
+    if not doc:
+        return jsonify({"error": "document not found"}), 404
+    if doc.user_id != g.user_id:
+        return jsonify({"error": "forbidden"}), 403
+
+    data = request.get_json()
+    new_name = data.get("name", "").strip()
+    if new_name:
+        doc.original_name = new_name
+        db.commit()
+    
+    return jsonify({"id": doc.id, "original_name": doc.original_name})
+
+@bp.delete("/<int:doc_id>")
+@auth_required
+def delete_document(doc_id):
+    db = get_db()
+    doc = db.query(Document).filter_by(id=doc_id).first()
+    if not doc:
+        return jsonify({"error": "document not found"}), 404
+    if doc.user_id != g.user_id:
+        return jsonify({"error": "forbidden"}), 403
+
+    # 1. Remove file from disk
+    path = os.path.join(UPLOAD_DIR, doc.filename)
+    if os.path.exists(path):
+        try:
+            os.remove(path)
+        except Exception as e:
+            print(f"Error deleting file {path}: {e}")
+            # We continue to delete from DB even if file delete fails (avoid ghost records)
+
+    # 2. Remove from DB
+    db.delete(doc)
+    db.commit()
+    
+    return jsonify({"ok": True})

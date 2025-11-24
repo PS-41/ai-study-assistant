@@ -4,8 +4,7 @@ from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Bool
 from sqlalchemy.orm import relationship
 from backend.db import Base
 
-# --- Association Tables for Many-to-Many relationships ---
-
+# --- Association Tables ---
 quiz_documents = Table(
     "quiz_documents",
     Base.metadata,
@@ -47,70 +46,70 @@ class Document(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    
-    # Organization (Optional)
     course_id = Column(Integer, ForeignKey("courses.id"), nullable=True)
     topic_id = Column(Integer, ForeignKey("topics.id"), nullable=True)
     
+    # Relationships
     course = relationship("Course", back_populates="documents")
     topic = relationship("Topic", back_populates="documents")
+    
+    # Note: When a doc is deleted, we do NOT cascade delete the Quizzes/Summaries generated from it 
+    # (they might rely on multiple docs). But the link in the association table will be removed automatically.
 
 class Summary(Base):
     __tablename__ = "summaries"
     id = Column(Integer, primary_key=True)
-    # No single document_id anymore
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     content = Column(Text, nullable=False)
-    title = Column(String, nullable=True)  # e.g. "Summary of Week 1"
+    title = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    # M2M relationship
     sources = relationship("Document", secondary=summary_documents, backref="summaries")
 
 class FlashcardSet(Base):
     __tablename__ = "flashcard_sets"
-
     id = Column(Integer, primary_key=True)
-    # No single document_id anymore
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     title = Column(String(255), nullable=False, default="Flashcards")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # M2M relationship
     sources = relationship("Document", secondary=flashcard_set_documents, backref="flashcard_sets")
+    # Cascade delete: If Set is deleted, delete all Cards
     cards = relationship("Flashcard", back_populates="set", cascade="all, delete-orphan")
 
 class Flashcard(Base):
     __tablename__ = "flashcards"
-
     id = Column(Integer, primary_key=True)
     set_id = Column(Integer, ForeignKey("flashcard_sets.id"), nullable=False)
-    front = Column(Text, nullable=False)   # question / prompt / term
-    back = Column(Text, nullable=False)    # answer / explanation
+    front = Column(Text, nullable=False)
+    back = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-
+    
     set = relationship("FlashcardSet", back_populates="cards")
 
 class Quiz(Base):
     __tablename__ = "quizzes"
     id = Column(Integer, primary_key=True)
-    # No single document_id anymore
     title = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     
-    # M2M relationship
     sources = relationship("Document", secondary=quiz_documents, backref="quizzes")
+    
+    # Cascade: Delete Quiz -> Delete Questions & Attempts
+    questions = relationship("Question", back_populates="quiz", cascade="all, delete-orphan")
+    attempts = relationship("Attempt", back_populates="quiz", cascade="all, delete-orphan")
 
 class Question(Base):
     __tablename__ = "questions"
     id = Column(Integer, primary_key=True)
     quiz_id = Column(Integer, ForeignKey("quizzes.id"), nullable=False)
-    qtype = Column(String, nullable=False)   # "mcq"
+    qtype = Column(String, nullable=False)
     prompt = Column(Text, nullable=False)
-    options = Column(Text, nullable=False)   # e.g., "A|||B|||C|||D"
-    answer = Column(String, nullable=False)  # exact option text
+    options = Column(Text, nullable=False)
+    answer = Column(String, nullable=False)
     explanation = Column(Text)
-    quiz = relationship("Quiz")
+    
+    quiz = relationship("Quiz", back_populates="questions")
 
 class Attempt(Base):
     __tablename__ = "attempts"
@@ -118,7 +117,10 @@ class Attempt(Base):
     quiz_id = Column(Integer, ForeignKey("quizzes.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     score_pct = Column(Integer, nullable=True)
-    quiz = relationship("Quiz")
+    
+    quiz = relationship("Quiz", back_populates="attempts")
+    # Cascade: Delete Attempt -> Delete AttemptAnswers
+    answers = relationship("AttemptAnswer", back_populates="attempt", cascade="all, delete-orphan")
 
 class AttemptAnswer(Base):
     __tablename__ = "attempt_answers"
@@ -127,6 +129,8 @@ class AttemptAnswer(Base):
     question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
     user_answer = Column(Text, nullable=False)
     is_correct = Column(Boolean, default=False)
+    
+    attempt = relationship("Attempt", back_populates="answers")
 
 class Course(Base):
     __tablename__ = "courses"
@@ -135,19 +139,20 @@ class Course(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
-    # relationships
+    
+    # Cascade: Delete Course -> Delete Topics
     topics = relationship("Topic", back_populates="course", cascade="all, delete-orphan", lazy="selectin")
+    # Do NOT cascade delete documents, just unlink them (handled by SQLAlchemy default set-null if nullable)
     documents = relationship("Document", back_populates="course", lazy="selectin")
 
 class Topic(Base):
     __tablename__ = "topics"
-
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
-    # relationships
+    
     course = relationship("Course", back_populates="topics")
     documents = relationship("Document", back_populates="topic", lazy="selectin")

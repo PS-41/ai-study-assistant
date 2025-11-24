@@ -126,3 +126,29 @@ def generate_summary():
         "title": s.title,
         "content": s.content,
     })
+
+@bp.put("/<int:id>")
+@auth_required
+def rename_summary(id):
+    db = get_db()
+    s = db.query(Summary).filter_by(id=id).first()
+    if not s or s.user_id != g.user_id:
+        return jsonify({"error": "forbidden"}), 403
+    
+    data = request.get_json()
+    if "title" in data:
+        s.title = data["title"].strip()
+        db.commit()
+    return jsonify({"ok": True})
+
+@bp.delete("/<int:id>")
+@auth_required
+def delete_summary(id):
+    db = get_db()
+    s = db.query(Summary).filter_by(id=id).first()
+    if not s or s.user_id != g.user_id:
+        return jsonify({"error": "forbidden"}), 403
+
+    db.delete(s)
+    db.commit()
+    return jsonify({"ok": True})

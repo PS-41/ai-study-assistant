@@ -55,3 +55,35 @@ def my_courses():
             "created_at": c.created_at.isoformat() if c.created_at else None,
         })
     return jsonify({"items": items})
+
+@bp.put("/<int:course_id>")
+@auth_required
+def update_course(course_id):
+    db = get_db()
+    c = db.query(Course).filter_by(id=course_id).first()
+    if not c or c.user_id != g.user_id:
+        return jsonify({"error": "course not found or forbidden"}), 404
+    
+    data = request.get_json()
+    if "name" in data:
+        c.name = data["name"].strip()
+    if "description" in data:
+        c.description = data["description"].strip()
+    
+    db.commit()
+    return jsonify({"id": c.id, "name": c.name, "description": c.description})
+
+@bp.delete("/<int:course_id>")
+@auth_required
+def delete_course(course_id):
+    db = get_db()
+    c = db.query(Course).filter_by(id=course_id).first()
+    if not c or c.user_id != g.user_id:
+        return jsonify({"error": "course not found or forbidden"}), 404
+
+    # Note: Because of cascade="all, delete-orphan" in models.py, 
+    # deleting the course will automatically delete its Topics.
+    # Documents will typically just have course_id set to NULL.
+    db.delete(c)
+    db.commit()
+    return jsonify({"ok": True})

@@ -192,3 +192,29 @@ def generate_set():
         "title": s.title,
         "count": len(cards_data),
     })
+
+@bp.put("/set/<int:set_id>")
+@auth_required
+def rename_set(set_id):
+    db = get_db()
+    s = db.query(FlashcardSet).filter_by(id=set_id).first()
+    if not s or (s.user_id and s.user_id != g.user_id):
+        return jsonify({"error": "forbidden"}), 403
+    
+    data = request.get_json()
+    if "title" in data:
+        s.title = data["title"].strip()
+        db.commit()
+    return jsonify({"ok": True})
+
+@bp.delete("/set/<int:set_id>")
+@auth_required
+def delete_set(set_id):
+    db = get_db()
+    s = db.query(FlashcardSet).filter_by(id=set_id).first()
+    if not s or (s.user_id and s.user_id != g.user_id):
+        return jsonify({"error": "forbidden"}), 403
+
+    db.delete(s) # Cascades to cards
+    db.commit()
+    return jsonify({"ok": True})

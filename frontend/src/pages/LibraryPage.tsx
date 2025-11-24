@@ -3,6 +3,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { SourcesModal, AttemptsModal } from "../components/LibraryModals";
+import { RenameModal, DeleteModal } from "../components/ActionModals";
 
 // --- Icons ---
 const Icons = {
@@ -10,16 +11,19 @@ const Icons = {
   Flashcard: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>,
   Summary: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-600"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>,
   Search: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>,
+  Edit: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>,
+  Trash: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>,
 };
 
 // Unified Type
 type LibraryItem = {
-  id: number; // backend ID
+  id: number; 
   type: "quiz" | "flashcard" | "summary";
   title: string;
   created_at: string;
-  sources: { id: number; original_name: string }[]; // Updated to full objects
+  sources: { id: number; original_name: string }[]; 
   meta_text?: string; 
+  source_count: number;
 };
 
 export default function LibraryPage() {
@@ -32,6 +36,8 @@ export default function LibraryPage() {
   // Modal States
   const [viewSources, setViewSources] = useState<LibraryItem | null>(null);
   const [viewAttempts, setViewAttempts] = useState<LibraryItem | null>(null);
+  const [renamingItem, setRenamingItem] = useState<LibraryItem | null>(null);
+  const [deletingItem, setDeletingItem] = useState<LibraryItem | null>(null);
 
   useEffect(() => {
     async function loadAll() {
@@ -49,6 +55,7 @@ export default function LibraryPage() {
           title: q.title,
           created_at: q.created_at,
           sources: q.sources || [],
+          source_count: (q.sources || []).length,
           meta_text: `${q.attempts || 0} Attempts`,
         }));
 
@@ -58,6 +65,7 @@ export default function LibraryPage() {
           title: f.title,
           created_at: f.created_at,
           sources: f.sources || [],
+          source_count: (f.sources || []).length,
           meta_text: `${f.count} Cards`,
         }));
 
@@ -67,11 +75,11 @@ export default function LibraryPage() {
           title: s.title,
           created_at: s.created_at,
           sources: s.sources || [],
+          source_count: (s.sources || []).length,
           meta_text: "Read Summary",
         }));
 
         const combined = [...quizzes, ...flashcards, ...summaries];
-        // Sort by newest first
         combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         setItems(combined as LibraryItem[]);
       } catch (e) {
@@ -97,17 +105,40 @@ export default function LibraryPage() {
     if (item.type === "summary") nav(`/summary/${item.id}`);
   };
 
+  const handleRename = async (newName: string) => {
+    if (!renamingItem) return;
+    try {
+      let url = "";
+      if (renamingItem.type === 'quiz') url = `/api/quizzes/${renamingItem.id}`;
+      else if (renamingItem.type === 'flashcard') url = `/api/flashcards/set/${renamingItem.id}`;
+      else url = `/api/summaries/${renamingItem.id}`;
+      
+      await api.put(url, { title: newName });
+      setItems(prev => prev.map(i => (i.id === renamingItem.id && i.type === renamingItem.type) ? { ...i, title: newName } : i));
+    } catch(e) { throw e; }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingItem) return;
+    try {
+      let url = "";
+      if (deletingItem.type === 'quiz') url = `/api/quizzes/${deletingItem.id}`;
+      else if (deletingItem.type === 'flashcard') url = `/api/flashcards/set/${deletingItem.id}`;
+      else url = `/api/summaries/${deletingItem.id}`;
+
+      await api.delete(url);
+      setItems(prev => prev.filter(i => !(i.id === deletingItem.id && i.type === deletingItem.type)));
+    } catch(e) { throw e; }
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-20">
-      {/* Header */}
       <div>
         <h2 className="text-2xl font-bold text-gray-800">My Library</h2>
         <p className="text-sm text-gray-500 mt-1">All your generated study materials in one place.</p>
       </div>
 
-      {/* Controls */}
       <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white p-2 rounded-lg border shadow-sm">
-        {/* Tabs */}
         <div className="flex gap-1 bg-gray-100 p-1 rounded-md w-full sm:w-auto">
           {(["all", "quiz", "flashcard", "summary"] as const).map(t => (
             <button
@@ -122,7 +153,6 @@ export default function LibraryPage() {
           ))}
         </div>
 
-        {/* Search */}
         <div className="relative w-full sm:w-64">
           <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><Icons.Search /></div>
           <input 
@@ -134,7 +164,6 @@ export default function LibraryPage() {
         </div>
       </div>
 
-      {/* Grid */}
       {loading ? (
         <div className="text-center py-20 text-gray-400">Loading your library...</div>
       ) : filteredItems.length === 0 ? (
@@ -146,10 +175,16 @@ export default function LibraryPage() {
           {filteredItems.map(item => (
             <div 
               key={`${item.type}-${item.id}`} 
-              className="group bg-white border rounded-xl p-5 hover:shadow-md transition-all flex flex-col justify-between h-40"
+              className="group relative bg-white border rounded-xl p-5 hover:shadow-md transition-all flex flex-col justify-between h-40 cursor-pointer"
+              onClick={() => handleOpen(item)}
             >
-              {/* Top Section: Click to Open */}
-              <div className="cursor-pointer" onClick={() => handleOpen(item)}>
+               {/* Edit/Delete Overlay */}
+               <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 rounded shadow-sm border p-0.5 z-10">
+                  <button onClick={(e)=>{e.stopPropagation(); setRenamingItem(item)}} className="p-1 text-gray-400 hover:text-blue-600"><Icons.Edit /></button>
+                  <button onClick={(e)=>{e.stopPropagation(); setDeletingItem(item)}} className="p-1 text-gray-400 hover:text-red-600"><Icons.Trash /></button>
+               </div>
+
+              <div>
                 <div className="flex items-start justify-between mb-2">
                   <div className={`p-2 rounded-lg ${
                     item.type === 'quiz' ? 'bg-blue-50' : 
@@ -163,22 +198,19 @@ export default function LibraryPage() {
                     {new Date(item.created_at).toLocaleDateString()}
                   </div>
                 </div>
-                <h3 className="font-semibold text-gray-800 line-clamp-2 group-hover:text-blue-600 transition-colors">
+                <h3 className="font-semibold text-gray-800 line-clamp-2 group-hover:text-blue-600 transition-colors pr-6">
                   {item.title}
                 </h3>
               </div>
               
-              {/* Footer: Interactive Meta Data */}
               <div className="flex items-center justify-between text-xs text-gray-500 mt-4 pt-4 border-t">
-                {/* Sources Trigger */}
                 <button 
                   onClick={(e) => { e.stopPropagation(); setViewSources(item); }}
                   className="hover:text-blue-600 hover:underline truncate max-w-[50%] text-left"
                 >
-                  {item.sources.length} Source{item.sources.length !== 1 ? 's' : ''}
+                  {item.source_count} Source{item.source_count !== 1 ? 's' : ''}
                 </button>
 
-                {/* Meta Trigger (Attempts or Cards) */}
                 {item.type === "quiz" ? (
                   <button 
                     onClick={(e) => { e.stopPropagation(); setViewAttempts(item); }}
@@ -199,20 +231,11 @@ export default function LibraryPage() {
         </div>
       )}
 
-      {/* Modals */}
-      {viewSources && (
-        <SourcesModal 
-          sources={viewSources.sources} 
-          onClose={() => setViewSources(null)} 
-        />
-      )}
-      {viewAttempts && (
-        <AttemptsModal 
-          quizId={viewAttempts.id} 
-          quizTitle={viewAttempts.title} 
-          onClose={() => setViewAttempts(null)} 
-        />
-      )}
+      {viewSources && <SourcesModal sources={viewSources.sources} onClose={() => setViewSources(null)} />}
+      {viewAttempts && <AttemptsModal quizId={viewAttempts.id} quizTitle={viewAttempts.title} onClose={() => setViewAttempts(null)} />}
+      
+      {renamingItem && <RenameModal title={`Rename ${renamingItem.type}`} currentName={renamingItem.title} onClose={() => setRenamingItem(null)} onRename={handleRename} />}
+      {deletingItem && <DeleteModal title={`Delete ${deletingItem.type}`} message={`Are you sure you want to delete "${deletingItem.title}"?`} onClose={() => setDeletingItem(null)} onConfirm={handleDelete} />}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import GenerateModal from "../components/GenerateModal";
 import { CreateCourseModal, CreateTopicModal } from "../components/ResourceModals";
+import { RenameModal, DeleteModal } from "../components/ActionModals"; // NEW
 
 const apiOrigin = import.meta.env.DEV ? "http://localhost:5000" : "";
 const apiHref = (path: string) => `${apiOrigin}${path}`;
@@ -25,7 +26,9 @@ const Icons = {
   X: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>,
   FilePlus: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>,
   Zap: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>,
-  ExternalLink: () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+  ExternalLink: () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>,
+  Edit: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>,
+  Trash: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>,
 };
 
 export default function CoursesPage() {
@@ -49,10 +52,13 @@ export default function CoursesPage() {
   const [showCourseModal, setShowCourseModal] = useState(false);
   const [showTopicModal, setShowTopicModal] = useState(false);
   const [activeGenType, setActiveGenType] = useState<"quiz"|"flashcards"|"summary"|null>(null);
-  
-  // Add Doc Modal State
   const [showAddDocModal, setShowAddDocModal] = useState(false);
   const [targetTopicId, setTargetTopicId] = useState<number | null>(null);
+
+  // Rename/Delete States
+  const [renamingItem, setRenamingItem] = useState<{ type: 'course'|'topic', id: number, name: string } | null>(null);
+  const [deletingItem, setDeletingItem] = useState<{ type: 'course'|'topic', id: number, name: string } | null>(null);
+
 
   useEffect(() => {
     setLoading(true);
@@ -70,7 +76,6 @@ export default function CoursesPage() {
   }, [selectedCourseId]);
 
   async function reloadCourseDetails(courseId: number) {
-    // Don't force loading spinner if just refreshing for cache update
     if(!docsByCourse[courseId]) setLoadingDetails(prev => ({ ...prev, [courseId]: true }));
     
     try {
@@ -81,7 +86,6 @@ export default function CoursesPage() {
       setTopicsByCourse(prev => ({ ...prev, [courseId]: tRes.data.items || [] }));
       setDocsByCourse(prev => ({ ...prev, [courseId]: dRes.data.items || [] }));
       
-      // Auto expand
       const tIds = (tRes.data.items || []).map((t:Topic) => String(t.id));
       setExpandedTopics(prev => {
         const next = { ...prev, "none": true };
@@ -108,7 +112,42 @@ export default function CoursesPage() {
     return groups;
   }, [docs, topics]);
 
-  // --- Bulk Selection Logic ---
+  // --- Action Handlers ---
+
+  const handleRename = async (newName: string) => {
+    if (!renamingItem) return;
+    const { type, id } = renamingItem;
+    if (type === 'course') {
+      await api.put(`/api/courses/${id}`, { name: newName });
+      setCourses(prev => prev.map(c => c.id === id ? { ...c, name: newName } : c));
+    } else {
+      await api.put(`/api/topics/${id}`, { name: newName });
+      if (selectedCourseId) {
+        setTopicsByCourse(prev => ({
+          ...prev,
+          [selectedCourseId]: prev[selectedCourseId].map(t => t.id === id ? { ...t, name: newName } : t)
+        }));
+      }
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingItem) return;
+    const { type, id } = deletingItem;
+    if (type === 'course') {
+      await api.delete(`/api/courses/${id}`);
+      setCourses(prev => prev.filter(c => c.id !== id));
+      if (selectedCourseId === id) setSelectedCourseId(null);
+    } else {
+      await api.delete(`/api/topics/${id}`);
+      if (selectedCourseId) {
+        setTopicsByCourse(prev => ({
+          ...prev,
+          [selectedCourseId]: prev[selectedCourseId].filter(t => t.id !== id)
+        }));
+      }
+    }
+  };
 
   const toggleDocSelection = (docId: number) => {
     setSelectedDocIds(prev => {
@@ -120,15 +159,11 @@ export default function CoursesPage() {
 
   const toggleBatch = (ids: number[]) => {
     if (ids.length === 0) return;
-    // Check if all are currently selected
     const allSelected = ids.every(id => selectedDocIds.has(id));
     setSelectedDocIds(prev => {
       const next = new Set(prev);
-      if (allSelected) {
-        ids.forEach(id => next.delete(id));
-      } else {
-        ids.forEach(id => next.add(id));
-      }
+      if (allSelected) ids.forEach(id => next.delete(id));
+      else ids.forEach(id => next.add(id));
       return next;
     });
   };
@@ -136,19 +171,13 @@ export default function CoursesPage() {
   const handleCourseCheck = async (cId: number, e: React.MouseEvent) => {
     e.stopPropagation();
     let currentDocs = docsByCourse[cId];
-    
-    // If docs for this course aren't loaded yet, fetch them now
     if (!currentDocs) {
        try {
          const { data } = await api.get("/api/files/mine", { params: { course_id: cId } });
          currentDocs = data.items;
          setDocsByCourse(prev => ({ ...prev, [cId]: currentDocs }));
-       } catch(err) { 
-         console.error("Failed to fetch docs for course selection", err);
-         return; 
-       }
+       } catch(err) { return; }
     }
-    
     toggleBatch(currentDocs.map(d => d.id));
   };
 
@@ -184,9 +213,8 @@ export default function CoursesPage() {
           {courses.map(c => (
             <div 
               key={c.id} 
-              className={`w-full flex items-center px-3 py-2 rounded-md text-sm gap-2 transition-colors ${selectedCourseId===c.id ? "bg-blue-50 text-blue-700 font-medium ring-1 ring-blue-200" : "text-gray-600 hover:bg-gray-100"}`}
+              className={`group relative w-full flex items-center px-3 py-2 rounded-md text-sm gap-2 transition-colors ${selectedCourseId===c.id ? "bg-blue-50 text-blue-700 font-medium ring-1 ring-blue-200" : "text-gray-600 hover:bg-gray-100"}`}
             >
-              {/* Course Checkbox (Only in Select Mode) */}
               {isSelectMode && (
                 <button 
                   onClick={(e) => handleCourseCheck(c.id, e)} 
@@ -200,6 +228,12 @@ export default function CoursesPage() {
                 <Icons.Folder />
                 <span className="truncate">{c.name}</span>
               </button>
+              
+              {/* Edit/Delete Actions (Visible on Hover) */}
+              <div className="hidden group-hover:flex gap-1 absolute right-2 bg-white/90 p-0.5 rounded border shadow-sm">
+                <button onClick={(e) => { e.stopPropagation(); setRenamingItem({ type:'course', id:c.id, name:c.name }); }} className="p-1 hover:text-blue-600"><Icons.Edit /></button>
+                <button onClick={(e) => { e.stopPropagation(); setDeletingItem({ type:'course', id:c.id, name:c.name }); }} className="p-1 hover:text-red-600"><Icons.Trash /></button>
+              </div>
             </div>
           ))}
         </div>
@@ -216,34 +250,18 @@ export default function CoursesPage() {
               </div>
               <div className="flex gap-2 items-center">
                 <div className="flex items-center gap-2 bg-white p-1 border rounded-lg shadow-sm mr-2">
-                  <button 
-                    onClick={() => initiateAction("generate")}
-                    className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md transition"
-                  >
+                  <button onClick={() => initiateAction("generate")} className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md transition">
                     <Icons.Zap /> Generate
                   </button>
                   <div className="w-px h-5 bg-gray-300"></div>
-                  <button
-                    onClick={() => {
-                      if (isSelectMode) {
-                        setSelectedDocIds(new Set());
-                        setPromptMode(null);
-                      }
-                      setIsSelectMode(!isSelectMode);
-                    }}
-                    className={`px-3 py-1.5 text-sm font-medium rounded-md transition ${isSelectMode ? "bg-gray-100 text-gray-900" : "text-gray-700 hover:bg-gray-50"}`}
-                  >
+                  <button onClick={() => { if (isSelectMode) { setSelectedDocIds(new Set()); setPromptMode(null); } setIsSelectMode(!isSelectMode); }} className={`px-3 py-1.5 text-sm font-medium rounded-md transition ${isSelectMode ? "bg-gray-100 text-gray-900" : "text-gray-700 hover:bg-gray-50"}`}>
                     {isSelectMode ? "Cancel" : "Select Multiple"}
                   </button>
                 </div>
-
-                <button onClick={() => setShowTopicModal(true)} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-sm transition">
-                  + New Topic
-                </button>
+                <button onClick={() => setShowTopicModal(true)} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-sm transition">+ New Topic</button>
               </div>
             </header>
 
-            {/* Banner */}
             {isSelectMode && promptMode && selectedDocIds.size === 0 && (
               <div className="bg-blue-50 border-b border-blue-100 text-blue-700 px-6 py-2 text-sm flex items-center animate-in fade-in">
                 <span className="mr-2">ℹ️</span> {promptMode}. Check specific documents or entire topics/courses.
@@ -271,6 +289,9 @@ export default function CoursesPage() {
                       onToggleBatch={toggleBatch}
                       expanded={!!expandedTopics[String(t.id)]} onToggleExpand={() => setExpandedTopics(p => ({...p, [String(t.id)]: !p[String(t.id)]}))}
                       onAddDoc={() => openAddDocModal(t.id)}
+                      // NEW: Topic actions
+                      onRename={() => setRenamingItem({ type:'topic', id:t.id, name:t.name })}
+                      onDelete={() => setDeletingItem({ type:'topic', id:t.id, name:t.name })}
                     />
                   ))}
                 </>
@@ -296,16 +317,27 @@ export default function CoursesPage() {
       {/* Modals */}
       {showCourseModal && <CreateCourseModal onClose={()=>setShowCourseModal(false)} onSuccess={(c)=>{setCourses(p=>[...p, c]); setSelectedCourseId(c.id);}} />}
       {showTopicModal && selectedCourseId && <CreateTopicModal courseId={selectedCourseId} onClose={()=>setShowTopicModal(false)} onSuccess={(t)=>reloadCourseDetails(selectedCourseId!)} />}
-      
       {activeGenType && <GenerateModal type={activeGenType} docIds={Array.from(selectedDocIds)} onClose={()=>setActiveGenType(null)} onSuccess={()=>{setSelectedDocIds(new Set()); setIsSelectMode(false); setPromptMode(null);}} />}
       
       {showAddDocModal && selectedCourseId && (
-        <AddDocModal 
-          courseId={selectedCourseId} 
-          topicId={targetTopicId} 
-          currentDocs={docs} 
-          onClose={() => setShowAddDocModal(false)} 
-          onSuccess={() => reloadCourseDetails(selectedCourseId)} 
+        <AddDocModal courseId={selectedCourseId} topicId={targetTopicId} currentDocs={docs} onClose={() => setShowAddDocModal(false)} onSuccess={() => reloadCourseDetails(selectedCourseId)} />
+      )}
+
+      {/* Action Modals */}
+      {renamingItem && (
+        <RenameModal
+          title={`Rename ${renamingItem.type === 'course' ? 'Course' : 'Topic'}`}
+          currentName={renamingItem.name}
+          onClose={() => setRenamingItem(null)}
+          onRename={handleRename}
+        />
+      )}
+      {deletingItem && (
+        <DeleteModal
+          title={`Delete ${deletingItem.type === 'course' ? 'Course' : 'Topic'}`}
+          message={`Are you sure you want to delete "${deletingItem.name}"? This action cannot be undone.`}
+          onClose={() => setDeletingItem(null)}
+          onConfirm={handleDelete}
         />
       )}
     </div>
@@ -313,19 +345,18 @@ export default function CoursesPage() {
 }
 
 // Helper: Topic Section
-function TopicSection({ title, subtitle, docs, isSelectMode, selectedIds, onToggle, onToggleBatch, expanded, onToggleExpand, onAddDoc }: any) {
+function TopicSection({ title, subtitle, docs, isSelectMode, selectedIds, onToggle, onToggleBatch, expanded, onToggleExpand, onAddDoc, onRename, onDelete }: any) {
   const nav = useNavigate();
   const allSelected = docs.length > 0 && docs.every((d:Doc) => selectedIds.has(d.id));
 
   return (
-    <div className="bg-white border rounded-lg shadow-sm overflow-hidden">
+    <div className="bg-white border rounded-lg shadow-sm overflow-hidden group/section">
       <div className="flex items-center justify-between p-3 bg-gray-50">
         <div className="flex items-center gap-3 flex-1">
           <button onClick={onToggleExpand} className="text-gray-500 hover:text-gray-700 p-1">
             {expanded ? <Icons.ChevronDown /> : <Icons.ChevronRight />}
           </button>
           
-          {/* Topic Checkbox (Only in select mode) */}
           {isSelectMode && (
             <button 
               onClick={() => onToggleBatch(docs.map((d:Doc) => d.id))}
@@ -335,10 +366,20 @@ function TopicSection({ title, subtitle, docs, isSelectMode, selectedIds, onTogg
             </button>
           )}
 
-          <div onClick={onToggleExpand} className="cursor-pointer">
-            <span className="font-medium text-gray-800">{title}</span>
-            {subtitle && <span className="ml-2 text-xs text-gray-500 font-normal">- {subtitle}</span>}
-            <span className="ml-2 text-xs text-gray-400">({docs.length})</span>
+          <div onClick={onToggleExpand} className="cursor-pointer flex items-center gap-3">
+            <div>
+              <span className="font-medium text-gray-800">{title}</span>
+              {subtitle && <span className="ml-2 text-xs text-gray-500 font-normal">- {subtitle}</span>}
+              <span className="ml-2 text-xs text-gray-400">({docs.length})</span>
+            </div>
+            
+            {/* Topic Actions */}
+            {onRename && onDelete && (
+               <div className="hidden group-hover/section:flex gap-1 ml-2">
+                 <button onClick={(e) => {e.stopPropagation(); onRename()}} className="p-1 text-gray-400 hover:text-blue-600"><Icons.Edit /></button>
+                 <button onClick={(e) => {e.stopPropagation(); onDelete()}} className="p-1 text-gray-400 hover:text-red-600"><Icons.Trash /></button>
+               </div>
+            )}
           </div>
         </div>
         <button onClick={onAddDoc} className="text-xs text-blue-600 hover:underline flex items-center gap-1 px-2">
