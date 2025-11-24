@@ -5,6 +5,9 @@ import { api } from "../lib/api";
 import GenerateModal from "../components/GenerateModal";
 import { CreateCourseModal, CreateTopicModal } from "../components/ResourceModals";
 
+const apiOrigin = import.meta.env.DEV ? "http://localhost:5000" : "";
+const apiHref = (path: string) => `${apiOrigin}${path}`;
+
 // --- Types ---
 type Course = { id: number; name: string; description?: string|null };
 type Topic = { id: number; name: string; description?: string|null; course_id: number };
@@ -20,7 +23,9 @@ const Icons = {
   CheckSquare: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>,
   Square: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>,
   X: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>,
-  FilePlus: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+  FilePlus: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>,
+  Zap: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>,
+  ExternalLink: () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
 };
 
 export default function CoursesPage() {
@@ -38,6 +43,7 @@ export default function CoursesPage() {
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedDocIds, setSelectedDocIds] = useState<Set<number>>(new Set());
   const [expandedTopics, setExpandedTopics] = useState<Record<string, boolean>>({});
+  const [promptMode, setPromptMode] = useState<string|null>(null);
   
   // Modals
   const [showCourseModal, setShowCourseModal] = useState(false);
@@ -46,7 +52,7 @@ export default function CoursesPage() {
   
   // Add Doc Modal State
   const [showAddDocModal, setShowAddDocModal] = useState(false);
-  const [targetTopicId, setTargetTopicId] = useState<number | null>(null); // null = course level
+  const [targetTopicId, setTargetTopicId] = useState<number | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -58,14 +64,15 @@ export default function CoursesPage() {
       .finally(() => setLoading(false));
   }, [nav]);
 
-  // Fetch details when course selected
   useEffect(() => {
     if (!selectedCourseId) return;
     reloadCourseDetails(selectedCourseId);
   }, [selectedCourseId]);
 
   async function reloadCourseDetails(courseId: number) {
-    setLoadingDetails(prev => ({ ...prev, [courseId]: true }));
+    // Don't force loading spinner if just refreshing for cache update
+    if(!docsByCourse[courseId]) setLoadingDetails(prev => ({ ...prev, [courseId]: true }));
+    
     try {
       const [tRes, dRes] = await Promise.all([
         api.get(`/api/topics/by_course/${courseId}`),
@@ -101,12 +108,63 @@ export default function CoursesPage() {
     return groups;
   }, [docs, topics]);
 
+  // --- Bulk Selection Logic ---
+
   const toggleDocSelection = (docId: number) => {
     setSelectedDocIds(prev => {
       const next = new Set(prev);
       if (next.has(docId)) next.delete(docId); else next.add(docId);
       return next;
     });
+  };
+
+  const toggleBatch = (ids: number[]) => {
+    if (ids.length === 0) return;
+    // Check if all are currently selected
+    const allSelected = ids.every(id => selectedDocIds.has(id));
+    setSelectedDocIds(prev => {
+      const next = new Set(prev);
+      if (allSelected) {
+        ids.forEach(id => next.delete(id));
+      } else {
+        ids.forEach(id => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const handleCourseCheck = async (cId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    let currentDocs = docsByCourse[cId];
+    
+    // If docs for this course aren't loaded yet, fetch them now
+    if (!currentDocs) {
+       try {
+         const { data } = await api.get("/api/files/mine", { params: { course_id: cId } });
+         currentDocs = data.items;
+         setDocsByCourse(prev => ({ ...prev, [cId]: currentDocs }));
+       } catch(err) { 
+         console.error("Failed to fetch docs for course selection", err);
+         return; 
+       }
+    }
+    
+    toggleBatch(currentDocs.map(d => d.id));
+  };
+
+  const isCourseFullySelected = (cId: number) => {
+    const currentDocs = docsByCourse[cId];
+    if (!currentDocs || currentDocs.length === 0) return false;
+    return currentDocs.every(d => selectedDocIds.has(d.id));
+  };
+
+  const initiateAction = (action: "generate") => {
+    if (selectedDocIds.size > 0) {
+      setActiveGenType("quiz");
+    } else {
+      setIsSelectMode(true);
+      setPromptMode("Select documents to Generate Content");
+    }
   };
 
   const openAddDocModal = (topicId: number | null) => {
@@ -124,9 +182,25 @@ export default function CoursesPage() {
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {courses.map(c => (
-            <button key={c.id} onClick={() => setSelectedCourseId(c.id)} className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm ${selectedCourseId===c.id ? "bg-blue-50 text-blue-700 font-medium ring-1 ring-blue-200" : "text-gray-600 hover:bg-gray-100"}`}>
-              <Icons.Folder /><span className="truncate">{c.name}</span>
-            </button>
+            <div 
+              key={c.id} 
+              className={`w-full flex items-center px-3 py-2 rounded-md text-sm gap-2 transition-colors ${selectedCourseId===c.id ? "bg-blue-50 text-blue-700 font-medium ring-1 ring-blue-200" : "text-gray-600 hover:bg-gray-100"}`}
+            >
+              {/* Course Checkbox (Only in Select Mode) */}
+              {isSelectMode && (
+                <button 
+                  onClick={(e) => handleCourseCheck(c.id, e)} 
+                  className={`flex-shrink-0 text-gray-400 hover:text-blue-600 transition ${isCourseFullySelected(c.id) ? "text-blue-600" : ""}`}
+                >
+                  {isCourseFullySelected(c.id) ? <Icons.CheckSquare /> : <Icons.Square />}
+                </button>
+              )}
+              
+              <button onClick={() => setSelectedCourseId(c.id)} className="flex-1 flex items-center gap-3 text-left truncate">
+                <Icons.Folder />
+                <span className="truncate">{c.name}</span>
+              </button>
+            </div>
           ))}
         </div>
       </aside>
@@ -140,18 +214,44 @@ export default function CoursesPage() {
                 <h1 className="text-2xl font-bold text-gray-800">{selectedCourse.name}</h1>
                 <p className="text-gray-500 text-sm mt-1">{selectedCourse.description}</p>
               </div>
-              <div className="flex gap-2">
-                <button onClick={() => setIsSelectMode(!isSelectMode)} className={`px-3 py-1.5 text-sm rounded border ${isSelectMode ? "bg-gray-800 text-white" : "bg-white text-gray-700 hover:bg-gray-50"}`}>
-                  {isSelectMode ? "Done" : "Select"}
-                </button>
-                <button onClick={() => setShowTopicModal(true)} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 shadow-sm">
+              <div className="flex gap-2 items-center">
+                <div className="flex items-center gap-2 bg-white p-1 border rounded-lg shadow-sm mr-2">
+                  <button 
+                    onClick={() => initiateAction("generate")}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md transition"
+                  >
+                    <Icons.Zap /> Generate
+                  </button>
+                  <div className="w-px h-5 bg-gray-300"></div>
+                  <button
+                    onClick={() => {
+                      if (isSelectMode) {
+                        setSelectedDocIds(new Set());
+                        setPromptMode(null);
+                      }
+                      setIsSelectMode(!isSelectMode);
+                    }}
+                    className={`px-3 py-1.5 text-sm font-medium rounded-md transition ${isSelectMode ? "bg-gray-100 text-gray-900" : "text-gray-700 hover:bg-gray-50"}`}
+                  >
+                    {isSelectMode ? "Cancel" : "Select Multiple"}
+                  </button>
+                </div>
+
+                <button onClick={() => setShowTopicModal(true)} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-sm transition">
                   + New Topic
                 </button>
               </div>
             </header>
 
+            {/* Banner */}
+            {isSelectMode && promptMode && selectedDocIds.size === 0 && (
+              <div className="bg-blue-50 border-b border-blue-100 text-blue-700 px-6 py-2 text-sm flex items-center animate-in fade-in">
+                <span className="mr-2">ℹ️</span> {promptMode}. Check specific documents or entire topics/courses.
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {loadingDetails[selectedCourse.id] ? (
+              {loadingDetails[selectedCourse.id] && !docsByCourse[selectedCourse.id] ? (
                 <div className="text-gray-400">Loading...</div>
               ) : (
                 <>
@@ -159,6 +259,7 @@ export default function CoursesPage() {
                     title="General Documents" 
                     docs={groupedDocs["none"]} 
                     isSelectMode={isSelectMode} selectedIds={selectedDocIds} onToggle={toggleDocSelection}
+                    onToggleBatch={toggleBatch}
                     expanded={!!expandedTopics["none"]} onToggleExpand={() => setExpandedTopics(p => ({...p, "none": !p["none"]}))}
                     onAddDoc={() => openAddDocModal(null)}
                   />
@@ -167,6 +268,7 @@ export default function CoursesPage() {
                       key={t.id} title={t.name} subtitle={t.description}
                       docs={groupedDocs[String(t.id)] || []}
                       isSelectMode={isSelectMode} selectedIds={selectedDocIds} onToggle={toggleDocSelection}
+                      onToggleBatch={toggleBatch}
                       expanded={!!expandedTopics[String(t.id)]} onToggleExpand={() => setExpandedTopics(p => ({...p, [String(t.id)]: !p[String(t.id)]}))}
                       onAddDoc={() => openAddDocModal(t.id)}
                     />
@@ -182,10 +284,12 @@ export default function CoursesPage() {
       {isSelectMode && selectedDocIds.size > 0 && (
         <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-xl flex items-center gap-4 animate-in fade-in slide-in-from-bottom-4 z-50">
           <span className="font-medium text-sm pr-4 border-r border-gray-700">{selectedDocIds.size} selected</span>
-          <button onClick={() => setActiveGenType("quiz")} className="text-sm hover:text-blue-300">Quiz</button>
-          <button onClick={() => setActiveGenType("flashcards")} className="text-sm hover:text-emerald-300">Cards</button>
-          <button onClick={() => setActiveGenType("summary")} className="text-sm hover:text-purple-300">Summary</button>
-          <button onClick={() => setSelectedDocIds(new Set())} className="ml-2 hover:text-gray-400"><Icons.X /></button>
+          <div className="flex gap-1 border-r border-gray-700 pr-4 mr-2">
+            <button onClick={() => setActiveGenType("quiz")} className="px-3 py-1.5 text-sm hover:bg-gray-800 rounded-md transition text-blue-200">Quiz</button>
+            <button onClick={() => setActiveGenType("flashcards")} className="px-3 py-1.5 text-sm hover:bg-gray-800 rounded-md transition text-emerald-200">Cards</button>
+            <button onClick={() => setActiveGenType("summary")} className="px-3 py-1.5 text-sm hover:bg-gray-800 rounded-md transition text-purple-200">Summary</button>
+          </div>
+          <button onClick={() => { setSelectedDocIds(new Set()); setIsSelectMode(false); setPromptMode(null); }} className="ml-2 hover:text-gray-400"><Icons.X /></button>
         </div>
       )}
 
@@ -193,9 +297,8 @@ export default function CoursesPage() {
       {showCourseModal && <CreateCourseModal onClose={()=>setShowCourseModal(false)} onSuccess={(c)=>{setCourses(p=>[...p, c]); setSelectedCourseId(c.id);}} />}
       {showTopicModal && selectedCourseId && <CreateTopicModal courseId={selectedCourseId} onClose={()=>setShowTopicModal(false)} onSuccess={(t)=>reloadCourseDetails(selectedCourseId!)} />}
       
-      {activeGenType && <GenerateModal type={activeGenType} docIds={Array.from(selectedDocIds)} onClose={()=>setActiveGenType(null)} onSuccess={()=>{setSelectedDocIds(new Set());}} />}
+      {activeGenType && <GenerateModal type={activeGenType} docIds={Array.from(selectedDocIds)} onClose={()=>setActiveGenType(null)} onSuccess={()=>{setSelectedDocIds(new Set()); setIsSelectMode(false); setPromptMode(null);}} />}
       
-      {/* Add Doc Modal (Inline definition for simplicity) */}
       {showAddDocModal && selectedCourseId && (
         <AddDocModal 
           courseId={selectedCourseId} 
@@ -210,19 +313,34 @@ export default function CoursesPage() {
 }
 
 // Helper: Topic Section
-function TopicSection({ title, subtitle, docs, isSelectMode, selectedIds, onToggle, expanded, onToggleExpand, onAddDoc }: any) {
+function TopicSection({ title, subtitle, docs, isSelectMode, selectedIds, onToggle, onToggleBatch, expanded, onToggleExpand, onAddDoc }: any) {
   const nav = useNavigate();
+  const allSelected = docs.length > 0 && docs.every((d:Doc) => selectedIds.has(d.id));
+
   return (
     <div className="bg-white border rounded-lg shadow-sm overflow-hidden">
       <div className="flex items-center justify-between p-3 bg-gray-50">
-        <button onClick={onToggleExpand} className="flex items-center gap-2 text-left flex-1">
-          {expanded ? <Icons.ChevronDown /> : <Icons.ChevronRight />}
-          <div>
+        <div className="flex items-center gap-3 flex-1">
+          <button onClick={onToggleExpand} className="text-gray-500 hover:text-gray-700 p-1">
+            {expanded ? <Icons.ChevronDown /> : <Icons.ChevronRight />}
+          </button>
+          
+          {/* Topic Checkbox (Only in select mode) */}
+          {isSelectMode && (
+            <button 
+              onClick={() => onToggleBatch(docs.map((d:Doc) => d.id))}
+              className={`text-gray-400 hover:text-blue-600 ${allSelected ? "text-blue-600" : ""}`}
+            >
+              {allSelected ? <Icons.CheckSquare /> : <Icons.Square />}
+            </button>
+          )}
+
+          <div onClick={onToggleExpand} className="cursor-pointer">
             <span className="font-medium text-gray-800">{title}</span>
             {subtitle && <span className="ml-2 text-xs text-gray-500 font-normal">- {subtitle}</span>}
             <span className="ml-2 text-xs text-gray-400">({docs.length})</span>
           </div>
-        </button>
+        </div>
         <button onClick={onAddDoc} className="text-xs text-blue-600 hover:underline flex items-center gap-1 px-2">
           <Icons.FilePlus /> Add Docs
         </button>
@@ -234,14 +352,33 @@ function TopicSection({ title, subtitle, docs, isSelectMode, selectedIds, onTogg
           {docs.map((doc: Doc) => {
             const isSelected = selectedIds.has(doc.id);
             return (
-              <div key={doc.id} className={`flex items-center p-3 gap-3 ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
+              <div 
+                key={doc.id} 
+                onClick={() => {
+                  if (isSelectMode) onToggle(doc.id);
+                  else window.open(apiHref(`/api/files/view/${doc.id}`), '_blank');
+                }}
+                className={`flex items-center p-3 gap-3 transition-colors cursor-pointer ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+              >
                 <div className={`flex-shrink-0 ${isSelectMode ? 'w-6' : 'w-0 overflow-hidden'} transition-all`}>
-                  <button onClick={() => onToggle(doc.id)} className="text-gray-500 hover:text-blue-600">{isSelected ? <Icons.CheckSquare /> : <Icons.Square />}</button>
+                  <button onClick={(e) => { e.stopPropagation(); onToggle(doc.id); }} className="text-gray-500 hover:text-blue-600">
+                    {isSelected ? <Icons.CheckSquare /> : <Icons.Square />}
+                  </button>
                 </div>
                 <div className="text-gray-400"><Icons.FileText /></div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-gray-700 truncate">{doc.original_name}</div>
-                  <div className="text-xs text-gray-400">{new Date(doc.created_at).toLocaleDateString()} • {Math.round(doc.size / 1024)} KB</div>
+                  <div className="text-xs text-gray-400 flex items-center gap-1">
+                    <span>{new Date(doc.created_at).toLocaleDateString()}</span>
+                    <span>•</span>
+                    <span>{Math.round(doc.size / 1024)} KB</span>
+                    {!isSelectMode && (
+                      <>
+                        <span className="mx-1">•</span>
+                        <span className="text-blue-600 flex items-center gap-0.5"><Icons.ExternalLink /> Open</span>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -260,12 +397,7 @@ function AddDocModal({ courseId, topicId, currentDocs, onClose, onSuccess }: any
 
   useEffect(() => {
     api.get("/api/files/mine").then(({ data }) => {
-      // Filter out docs already in this course/topic to avoid redundancy? 
-      // Or simply list all "Unassigned" or "Available". 
-      // For now, list ALL docs that aren't ALREADY in this exact spot.
       const currentIds = new Set(currentDocs.map((d: Doc) => d.id));
-      // Actually, we want to allow moving docs from other courses too? Or just unassigned?
-      // Let's just show everything not currently in THIS specific topic/course slot.
       setAllDocs(data.items.filter((d: Doc) => !currentIds.has(d.id)));
     });
   }, []);
