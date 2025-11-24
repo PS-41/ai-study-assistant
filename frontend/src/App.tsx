@@ -10,6 +10,7 @@ import CoursesPage from "./pages/CoursesPage";
 import LibraryPage from "./pages/LibraryPage";         
 import SummaryViewer from "./pages/SummaryViewer";     
 import FlashcardViewer from "./pages/FlashcardViewer"; 
+import ProfilePage from "./pages/ProfilePage";
 import { useEffect, useState } from "react";
 import { api } from "./lib/api";
 
@@ -56,6 +57,15 @@ export default function App() {
                   <span className="text-xs text-gray-400">Welcome,</span>
                   <span className="text-gray-700 leading-none font-semibold">{me.name.split(" ")[0]}</span>
                 </div>
+                {/* ✅ New Profile link before Logout */}
+                <Link
+                  to="/profile"
+                  className={`text-xs transition hover:text-blue-600 ${
+                    loc.pathname === "/profile" ? "text-blue-600" : "text-gray-600"
+                  }`}
+                >
+                  Profile
+                </Link>
                 <button onClick={logout} className="px-3 py-1.5 border rounded text-xs hover:bg-gray-50 transition text-gray-600">Logout</button>
               </div>
             ) : (
@@ -81,6 +91,8 @@ export default function App() {
           <Route path="/quiz" element={<QuizPage />} />
           <Route path="/summary/:id" element={<SummaryViewer />} />
           <Route path="/flashcards/:id" element={<FlashcardViewer />} />
+
+          <Route path="/profile" element={<ProfilePage />} />
         </Routes>
       </main>
 

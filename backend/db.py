@@ -54,6 +54,20 @@ def run_schema_migrations(engine):
         if "topic_id" not in col_names:
             conn.execute(text("ALTER TABLE documents ADD COLUMN topic_id INTEGER NULL"))
 
+        # 4. User columns for profile/google
+        cols_user = conn.execute(text("PRAGMA table_info(users)")).fetchall()
+        col_names_user = {c[1] for c in cols_user}
+
+        if "username" not in col_names_user:
+            conn.execute(text("ALTER TABLE users ADD COLUMN username TEXT UNIQUE"))
+        
+        if "google_id" not in col_names_user:
+            conn.execute(text("ALTER TABLE users ADD COLUMN google_id TEXT UNIQUE"))
+            
+        # Note: SQLite cannot easily alter "email" to be nullable if it was NOT NULL. 
+        # We will handle this by passing an empty string or dummy value if necessary in code, 
+        # or relying on the fact that legacy users have it.
+
 def get_db():
     """Return a request-scoped SQLAlchemy session."""
     if "db" not in g:

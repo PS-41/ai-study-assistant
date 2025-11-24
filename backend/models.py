@@ -31,9 +31,12 @@ flashcard_set_documents = Table(
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True)
-    email = Column(String, unique=True, nullable=False)
+    # Email is kept for Google linking/Recovery, but we will allow it to be optional in logic if needed
+    email = Column(String, unique=True, nullable=True) 
+    username = Column(String, unique=True, nullable=True) # Added
     name = Column(String, nullable=False)
-    password_hash = Column(String, nullable=False)
+    password_hash = Column(String, nullable=True) # Nullable if created via Google only
+    google_id = Column(String, unique=True, nullable=True) # Added for linking
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Document(Base):
