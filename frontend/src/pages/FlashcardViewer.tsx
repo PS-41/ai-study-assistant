@@ -21,57 +21,88 @@ export default function FlashcardViewer() {
       .finally(() => setLoading(false));
   }, [id]);
 
-  if (loading) return <div className="p-8 text-gray-500">Loading set...</div>;
-  if (!setInfo) return <div className="p-8 text-gray-500">Set not found.</div>;
+  if (loading) return <div className="min-h-screen flex items-center justify-center text-gray-400">Loading deck...</div>;
+  if (!setInfo) return <div className="min-h-screen flex items-center justify-center text-gray-400">Set not found.</div>;
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-20">
-      <div className="flex items-center justify-between">
-        <button onClick={() => nav(-1)} className="text-sm text-gray-500 hover:text-gray-800">
-          ← Back
-        </button>
-        <div className="text-sm font-medium text-gray-600">{cards.length} Cards</div>
-      </div>
-
-      <div>
-        <h1 className="text-2xl font-bold text-gray-800 mb-2">{setInfo.title}</h1>
-        <div className="flex flex-wrap gap-2 mb-6">
-          {setInfo.sources.map((s: string, i: number) => (
-            <span key={i} className="px-2 py-1 bg-emerald-50 text-emerald-700 text-xs rounded-md border border-emerald-100">
-              {s}
-            </span>
-          ))}
+    <div className="min-h-screen bg-gray-50 pb-20">
+      {/* Header */}
+      <div className="bg-white border-b shadow-sm px-6 py-6 mb-8">
+        <div className="max-w-6xl mx-auto">
+            <button onClick={() => nav(-1)} className="text-sm text-gray-500 hover:text-gray-800 mb-3 flex items-center gap-1 transition-colors">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                Back to Library
+            </button>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-900">{setInfo.title}</h1>
+                    <div className="flex flex-wrap gap-2 mt-3">
+                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium border border-emerald-200">
+                            {cards.length} Cards
+                        </span>
+                        {setInfo.sources.map((s: string, i: number) => (
+                            <span key={i} className="px-2.5 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full border border-gray-200">
+                                {s}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {cards.map((c) => {
-          const isFlipped = flipped[c.id];
-          return (
-            <div
-              key={c.id}
-              onClick={() => setFlipped(prev => ({ ...prev, [c.id]: !prev[c.id] }))}
-              className="relative h-48 cursor-pointer group [perspective:1000px]"
-            >
-              <div className={`relative w-full h-full transition-all duration-500 [transform-style:preserve-3d] ${isFlipped ? "[transform:rotateY(180deg)]" : ""}`}>
-                
-                {/* Front */}
-                <div className="absolute inset-0 w-full h-full bg-white border rounded-xl p-6 shadow-sm flex flex-col justify-between [backface-visibility:hidden]">
-                  <div className="text-xs uppercase tracking-wider text-gray-400 font-semibold">Question</div>
-                  <div className="text-gray-800 font-medium text-center line-clamp-4">{c.front}</div>
-                  <div className="text-xs text-gray-400 text-center opacity-0 group-hover:opacity-100 transition-opacity">Click to flip</div>
-                </div>
+      {/* Cards Grid */}
+      <div className="max-w-6xl mx-auto px-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {cards.map((c) => {
+            const isFlipped = flipped[c.id];
+            return (
+                <div
+                key={c.id}
+                onClick={() => setFlipped(prev => ({ ...prev, [c.id]: !prev[c.id] }))}
+                className="relative h-64 cursor-pointer group [perspective:1000px]"
+                >
+                <div className={`relative w-full h-full transition-all duration-500 [transform-style:preserve-3d] ${isFlipped ? "[transform:rotateY(180deg)]" : ""}`}>
+                    
+                    {/* Front Side */}
+                    <div className="absolute inset-0 w-full h-full bg-white border border-gray-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between [backface-visibility:hidden]">
+                        <div className="w-full flex justify-between items-start">
+                            <div className="text-[10px] uppercase tracking-widest text-emerald-600 font-bold bg-emerald-50 px-2 py-1 rounded">Question</div>
+                            <div className="text-gray-300"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg></div>
+                        </div>
+                        
+                        <div className="flex-1 flex items-center justify-center my-2">
+                            <div className="text-gray-800 font-medium text-center text-lg leading-snug line-clamp-5 overflow-y-auto max-h-full scrollbar-hide">
+                                {c.front}
+                            </div>
+                        </div>
+                        
+                        <div className="text-xs text-gray-400 text-center opacity-0 group-hover:opacity-100 transition-opacity font-medium">
+                            Tap to reveal answer
+                        </div>
+                    </div>
 
-                {/* Back */}
-                <div className="absolute inset-0 w-full h-full bg-slate-800 text-slate-100 border border-slate-700 rounded-xl p-6 shadow-sm flex flex-col justify-between [transform:rotateY(180deg)] [backface-visibility:hidden]">
-                  <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Answer</div>
-                  <div className="text-center line-clamp-5 leading-relaxed">{c.back}</div>
-                  <div className="text-xs text-slate-500 text-center">Click to flip back</div>
+                    {/* Back Side */}
+                    <div className="absolute inset-0 w-full h-full bg-slate-800 text-slate-100 border border-slate-700 rounded-2xl p-6 shadow-lg flex flex-col justify-between [transform:rotateY(180deg)] [backface-visibility:hidden]">
+                        <div className="w-full flex justify-between items-start">
+                            <div className="text-[10px] uppercase tracking-widest text-emerald-400 font-bold bg-emerald-900/30 px-2 py-1 rounded">Answer</div>
+                        </div>
+
+                        <div className="flex-1 flex items-center justify-center my-2">
+                            <div className="text-slate-50 font-medium text-center text-base leading-relaxed overflow-y-auto max-h-full scrollbar-hide">
+                                {c.back}
+                            </div>
+                        </div>
+                        
+                        <div className="text-xs text-slate-500 text-center font-medium">
+                            Tap to flip back
+                        </div>
+                    </div>
                 </div>
-              </div>
-            </div>
-          );
-        })}
+                </div>
+            );
+            })}
+        </div>
       </div>
     </div>
   );

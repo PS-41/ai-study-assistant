@@ -23,9 +23,9 @@ type FlashcardSetItem = {
 // --- Icons ---
 const Icons = {
   Back: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>,
-  Quiz: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>,
-  Card: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>,
-  FileText: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>,
+  Quiz: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>,
+  Card: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>,
+  FileText: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>,
   Plus: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>,
 };
 
@@ -50,7 +50,7 @@ export default function DocDetailsPage() {
   const [activeGenType, setActiveGenType] = useState<"quiz" | "flashcards" | "summary" | null>(null);
   const [viewAttemptsQuiz, setViewAttemptsQuiz] = useState<{ id: number; title: string } | null>(null);
 
-  // Flashcard Study State
+  // Flashcard Study State (Mini Preview)
   const [activeSetId, setActiveSetId] = useState<number | null>(null);
   const [activeCards, setActiveCards] = useState<any[]>([]);
   const [flipped, setFlipped] = useState<Record<number, boolean>>({});
@@ -65,23 +65,19 @@ export default function DocDetailsPage() {
   const loadAll = useCallback(async () => {
     if (!docId) return;
     try {
-      // Fetch all data in parallel
       const [qRes, fRes, sListRes, dRes] = await Promise.all([
         api.get("/api/quizzes/mine", { params: { document_id: docId } }),
         api.get("/api/flashcards", { params: { document_id: docId } }),
-        api.get("/api/summaries", { params: { document_id: docId } }), // Get list of summaries
+        api.get("/api/summaries", { params: { document_id: docId } }), 
         !state?.docName ? api.get("/api/files/mine").then(r => r.data.items.find((d:any) => d.id===docId)) : Promise.resolve(null)
       ]);
 
       setQuizzes(qRes.data.items || []);
       setFlashsets(fRes.data.items || []);
       
-      // Handle Summary: The list endpoint returns an array of summaries.
-      // We want to display the MOST RECENT one for this document.
       const summaries = sListRes.data.items || [];
       if (summaries.length > 0) {
         const latestSummaryId = summaries[0].id;
-        // Fetch full content for this summary (since list might only have preview)
         const detailRes = await api.get(`/api/summaries/${latestSummaryId}`);
         setSummary({ 
             content: detailRes.data.summary || detailRes.data.content, 
@@ -116,51 +112,83 @@ export default function DocDetailsPage() {
     }
   }
 
-  if (loading) return <div className="p-10 text-center text-gray-500">Loading document details...</div>;
+  if (loading) return <div className="flex items-center justify-center min-h-[50vh] text-gray-400">Loading...</div>;
 
   return (
-    <div className="max-w-5xl mx-auto pb-20">
+    <div className="max-w-6xl mx-auto px-6 py-10 pb-24 min-h-screen">
+      
       {/* Header */}
       <div className="mb-8">
-        <button onClick={() => nav("/docs")} className="text-sm text-gray-500 hover:text-gray-800 flex items-center gap-1 mb-2 transition-colors">
+        <button onClick={() => nav("/docs")} className="text-sm text-gray-500 hover:text-gray-900 flex items-center gap-1 mb-4 transition-colors font-medium">
           <Icons.Back /> Back to Documents
         </button>
-        <h1 className="text-3xl font-bold text-gray-900">{docName}</h1>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">{docName}</h1>
+            <div className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full border border-gray-200 w-fit">
+                Document Analysis
+            </div>
+        </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b mb-6">
-        <TabButton label="Quizzes" icon={<Icons.Quiz />} active={activeTab==="quizzes"} onClick={() => setActiveTab("quizzes")} />
-        <TabButton label="Flashcards" icon={<Icons.Card />} active={activeTab==="flashcards"} onClick={() => setActiveTab("flashcards")} />
-        <TabButton label="Summary" icon={<Icons.FileText />} active={activeTab==="summary"} onClick={() => setActiveTab("summary")} />
+      {/* Navigation Tabs */}
+      <div className="border-b border-gray-200 mb-8">
+        <nav className="flex space-x-8" aria-label="Tabs">
+            <TabButton 
+                label="Quizzes" 
+                icon={<Icons.Quiz />} 
+                active={activeTab==="quizzes"} 
+                onClick={() => setActiveTab("quizzes")} 
+                count={quizzes.length}
+            />
+            <TabButton 
+                label="Flashcards" 
+                icon={<Icons.Card />} 
+                active={activeTab==="flashcards"} 
+                onClick={() => setActiveTab("flashcards")} 
+                count={flashsets.length}
+            />
+            <TabButton 
+                label="Summary" 
+                icon={<Icons.FileText />} 
+                active={activeTab==="summary"} 
+                onClick={() => setActiveTab("summary")} 
+            />
+        </nav>
       </div>
 
       {/* --- QUIZZES TAB --- */}
       {activeTab === "quizzes" && (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-          <div className="flex justify-between items-center">
-            <h2 className="text-lg font-semibold text-gray-700">Available Quizzes</h2>
-            <button onClick={() => setActiveGenType("quiz")} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition shadow-sm flex items-center gap-2">
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-lg font-bold text-gray-800">Generated Quizzes</h2>
+            <button onClick={() => setActiveGenType("quiz")} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition shadow-sm hover:shadow flex items-center gap-2">
               <Icons.Plus /> Generate Quiz
             </button>
           </div>
 
           {quizzes.length === 0 ? (
-            <EmptyState msg="No quizzes yet. Generate one to test your knowledge." />
+            <EmptyState 
+                title="No Quizzes Yet"
+                msg="Create a quiz to test your knowledge on this document."
+                action={<button onClick={() => setActiveGenType("quiz")} className="text-blue-600 font-medium hover:underline">Create First Quiz</button>}
+            />
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {quizzes.map((q) => (
-                <div key={q.quiz_id} className="bg-white border rounded-xl p-5 hover:shadow-md transition flex flex-col justify-between h-40">
+                <div key={q.quiz_id} className="group bg-white border border-gray-200 rounded-2xl p-5 hover:shadow-md hover:border-blue-200 transition-all flex flex-col justify-between h-44">
                   <div>
-                    <div className="text-sm font-medium text-gray-900 mb-1 line-clamp-2">{q.title}</div>
-                    <div className="text-xs text-gray-500">{new Date(q.created_at).toLocaleDateString()}</div>
+                    <div className="flex justify-between items-start mb-2">
+                        <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Icons.Quiz /></div>
+                        <span className="text-xs text-gray-400 font-mono">{new Date(q.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <h3 className="font-semibold text-gray-900 line-clamp-2 group-hover:text-blue-600 transition-colors">{q.title}</h3>
                   </div>
-                  <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                    <button onClick={() => setViewAttemptsQuiz({ id: q.quiz_id, title: q.title })} className="text-xs text-blue-600 hover:underline">
+                  <div className="flex items-center justify-between pt-4 border-t border-gray-50">
+                    <button onClick={() => setViewAttemptsQuiz({ id: q.quiz_id, title: q.title })} className="text-xs font-medium text-gray-500 hover:text-blue-600 hover:underline">
                       {q.attempts} Attempt{q.attempts!==1?'s':''}
                     </button>
-                    <button onClick={() => nav(`/quiz?quizId=${q.quiz_id}`)} className="px-3 py-1.5 bg-blue-50 text-blue-700 text-xs font-medium rounded-md hover:bg-blue-100 transition">
-                      Start Quiz
+                    <button onClick={() => nav(`/quiz?quizId=${q.quiz_id}`)} className="px-4 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-800 transition shadow-sm">
+                      Start
                     </button>
                   </div>
                 </div>
@@ -172,59 +200,79 @@ export default function DocDetailsPage() {
 
       {/* --- FLASHCARDS TAB --- */}
       {activeTab === "flashcards" && (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-          <div className="flex justify-between items-center">
-            <h2 className="text-lg font-semibold text-gray-700">Flashcard Sets</h2>
-            <button onClick={() => setActiveGenType("flashcards")} className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700 transition shadow-sm flex items-center gap-2">
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-lg font-bold text-gray-800">Flashcard Sets</h2>
+            <button onClick={() => setActiveGenType("flashcards")} className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 transition shadow-sm hover:shadow flex items-center gap-2">
               <Icons.Plus /> New Set
             </button>
           </div>
 
           {flashsets.length === 0 ? (
-            <EmptyState msg="No flashcards yet. Generate a set to start memorizing." />
+            <EmptyState 
+                title="No Flashcards Yet"
+                msg="Generate flashcards to memorize key concepts and definitions."
+                action={<button onClick={() => setActiveGenType("flashcards")} className="text-emerald-600 font-medium hover:underline">Generate Flashcards</button>}
+            />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               {/* List of Sets */}
-              <div className="md:col-span-1 space-y-2">
+              <div className="space-y-3">
                 {flashsets.map(s => (
-                  <button
+                  <div
                     key={s.id}
                     onClick={() => openFlashcardSet(s.id)}
-                    className={`w-full text-left p-3 rounded-lg border transition ${activeSetId === s.id ? "bg-emerald-50 border-emerald-200 ring-1 ring-emerald-200" : "bg-white hover:bg-gray-50"}`}
+                    className={`cursor-pointer w-full text-left p-4 rounded-xl border transition-all ${
+                        activeSetId === s.id 
+                        ? "bg-emerald-50 border-emerald-500 ring-1 ring-emerald-500 shadow-sm" 
+                        : "bg-white border-gray-200 hover:border-emerald-300 hover:shadow-sm"
+                    }`}
                   >
-                    <div className="text-sm font-medium text-gray-900">{s.title}</div>
-                    <div className="text-xs text-gray-500 mt-1">{s.count} Cards • {new Date(s.created_at).toLocaleDateString()}</div>
-                  </button>
+                    <div className="flex justify-between items-start">
+                        <div className="font-semibold text-gray-900">{s.title}</div>
+                        {activeSetId === s.id && <span className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5"></span>}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1 font-medium">{s.count} Cards • {new Date(s.created_at).toLocaleDateString()}</div>
+                  </div>
                 ))}
               </div>
 
-              {/* Active Set View */}
-              <div className="md:col-span-2">
+              {/* Active Set Preview */}
+              <div className="lg:col-span-2 bg-gray-50 rounded-2xl border border-gray-200 p-6 min-h-[400px]">
                 {activeSetId && activeCards.length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {activeCards.map(c => {
-                      const isFlipped = !!flipped[c.id];
-                      return (
-                        <div key={c.id} onClick={() => setFlipped(p => ({...p, [c.id]: !p[c.id]}))} className="relative h-48 cursor-pointer [perspective:1000px] group">
-                          <div className={`relative w-full h-full transition-all duration-500 [transform-style:preserve-3d] ${isFlipped ? "[transform:rotateY(180deg)]" : ""}`}>
-                            <div className="absolute inset-0 bg-white border rounded-xl p-4 shadow-sm flex flex-col justify-between [backface-visibility:hidden]">
-                              <div className="text-[10px] uppercase text-gray-400 font-bold">Front</div>
-                              <div className="text-sm text-center font-medium text-gray-800 line-clamp-4">{c.front}</div>
-                              <div className="text-xs text-center text-gray-300 group-hover:text-gray-400">Click to flip</div>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center mb-2">
+                        <h3 className="font-semibold text-gray-700">Previewing: {flashsets.find(f=>f.id===activeSetId)?.title}</h3>
+                        <button onClick={() => nav(`/flashcards/${activeSetId}`)} className="text-xs font-medium text-emerald-600 hover:underline">
+                            Open Full Viewer &rarr;
+                        </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {activeCards.map(c => {
+                        const isFlipped = !!flipped[c.id];
+                        return (
+                            <div key={c.id} onClick={() => setFlipped(p => ({...p, [c.id]: !p[c.id]}))} className="relative h-48 cursor-pointer [perspective:1000px] group">
+                            <div className={`relative w-full h-full transition-all duration-500 [transform-style:preserve-3d] ${isFlipped ? "[transform:rotateY(180deg)]" : ""}`}>
+                                <div className="absolute inset-0 bg-white border rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between [backface-visibility:hidden]">
+                                    <div className="text-[10px] uppercase text-emerald-600 font-bold tracking-wider">Question</div>
+                                    <div className="text-sm text-center font-medium text-gray-800 line-clamp-4 leading-snug">{c.front}</div>
+                                    <div className="text-[10px] text-center text-gray-300 font-medium uppercase tracking-widest">Flip</div>
+                                </div>
+                                <div className="absolute inset-0 bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-sm flex flex-col justify-between [transform:rotateY(180deg)] [backface-visibility:hidden]">
+                                    <div className="text-[10px] uppercase text-emerald-400 font-bold tracking-wider">Answer</div>
+                                    <div className="text-sm text-center text-slate-100 leading-relaxed line-clamp-5">{c.back}</div>
+                                    <div className="text-[10px] text-center text-slate-600 font-medium uppercase tracking-widest">Back</div>
+                                </div>
                             </div>
-                            <div className="absolute inset-0 bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-sm flex flex-col justify-between [transform:rotateY(180deg)] [backface-visibility:hidden]">
-                              <div className="text-[10px] uppercase text-slate-500 font-bold">Back</div>
-                              <div className="text-sm text-center text-slate-200 leading-relaxed line-clamp-5">{c.back}</div>
-                              <div className="text-xs text-center text-slate-600">Click to return</div>
                             </div>
-                          </div>
-                        </div>
-                      )
-                    })}
+                        )
+                        })}
+                    </div>
                   </div>
                 ) : (
-                  <div className="h-full flex items-center justify-center text-gray-400 border-2 border-dashed rounded-xl min-h-[200px]">
-                    Select a set to view cards
+                  <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-2">
+                    <div className="p-3 bg-white rounded-full shadow-sm"><Icons.Card /></div>
+                    <p>Select a set to preview cards</p>
                   </div>
                 )}
               </div>
@@ -235,22 +283,45 @@ export default function DocDetailsPage() {
 
       {/* --- SUMMARY TAB --- */}
       {activeTab === "summary" && (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-          <div className="flex justify-between items-center">
-            <h2 className="text-lg font-semibold text-gray-700">Document Summary</h2>
-            <button onClick={() => setActiveGenType("summary")} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition shadow-sm flex items-center gap-2">
-              <Icons.Plus /> {summary ? "Regenerate" : "Generate"}
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-lg font-bold text-gray-800">Document Summary</h2>
+            <button onClick={() => setActiveGenType("summary")} className="px-4 py-2 bg-purple-600 text-white rounded-xl text-sm font-medium hover:bg-purple-700 transition shadow-sm hover:shadow flex items-center gap-2">
+              <Icons.Plus /> {summary ? "Regenerate Summary" : "Generate Summary"}
             </button>
           </div>
 
           {!summary ? (
-            <EmptyState msg="No summary generated yet." />
+            <EmptyState 
+                title="No Summary"
+                msg="Generate a summary to get a quick overview of this document."
+                action={<button onClick={() => setActiveGenType("summary")} className="text-purple-600 font-medium hover:underline">Generate Now</button>}
+            />
           ) : (
-            <div className="bg-white border rounded-xl p-8 shadow-sm">
-              {/* Here is the fix: Rendering content nicely */}
-              <SimpleMarkdown content={summary.content} />
-              <div className="mt-6 pt-4 border-t text-xs text-gray-400 text-right">
-                Generated on {new Date(summary.created_at).toLocaleString()}
+            <div className="bg-white border border-gray-200 rounded-2xl p-8 md:p-10 shadow-sm">
+              <div className="prose prose-slate max-w-none text-gray-700 leading-relaxed">
+                 {/* Simple Markdown Renderer */}
+                 {summary.content.split('\n').map((line, i) => {
+                    if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+                        return <li key={i} className="ml-4 list-disc my-1">{line.replace(/^[-*]\s/, '')}</li>
+                    }
+                    if (line.trim() === '') return <br key={i}/>
+                    // Simple bold handling
+                    const parts = line.split(/(\*\*.*?\*\*)/g);
+                    return (
+                        <p key={i} className="mb-4">
+                            {parts.map((part, j) => 
+                                part.startsWith('**') && part.endsWith('**') 
+                                ? <strong key={j}>{part.slice(2, -2)}</strong> 
+                                : part
+                            )}
+                        </p>
+                    );
+                })}
+              </div>
+              <div className="mt-8 pt-6 border-t border-gray-100 text-xs text-gray-400 flex justify-between">
+                <span>Generated on {new Date(summary.created_at).toLocaleString()}</span>
+                <span>AI generated content</span>
               </div>
             </div>
           )}
@@ -264,7 +335,6 @@ export default function DocDetailsPage() {
           docIds={[docId]} 
           onClose={() => setActiveGenType(null)}
           onSuccess={() => {
-            // When generation finishes, we just reload the data so the new item appears
             setActiveGenType(null);
             loadAll();
           }}
@@ -285,61 +355,37 @@ export default function DocDetailsPage() {
 
 // --- Subcomponents ---
 
-function TabButton({ label, icon, active, onClick }: any) {
+function TabButton({ label, icon, active, onClick, count }: any) {
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-all border-b-2 ${
+      className={`group inline-flex items-center py-4 px-1 border-b-2 font-medium text-sm transition-all ${
         active 
           ? "border-blue-600 text-blue-600" 
-          : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+          : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
       }`}
     >
-      {icon} {label}
+      <span className={`mr-2 ${active ? "text-blue-600" : "text-gray-400 group-hover:text-gray-500"}`}>
+        {icon}
+      </span>
+      {label}
+      {count !== undefined && (
+        <span className={`ml-2 py-0.5 px-2.5 rounded-full text-xs ${
+            active ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-600"
+        }`}>
+            {count}
+        </span>
+      )}
     </button>
   );
 }
 
-function EmptyState({ msg }: { msg: string }) {
+function EmptyState({ title, msg, action }: { title: string, msg: string, action?: React.ReactNode }) {
   return (
-    <div className="py-12 text-center bg-gray-50 rounded-xl border border-dashed border-gray-200">
-      <p className="text-gray-500">{msg}</p>
+    <div className="py-16 text-center bg-white rounded-2xl border border-dashed border-gray-200">
+      <h3 className="text-lg font-medium text-gray-900 mb-1">{title}</h3>
+      <p className="text-gray-500 mb-4 max-w-sm mx-auto">{msg}</p>
+      {action}
     </div>
   );
-}
-
-// A lightweight Markdown renderer (Zero dependency)
-function SimpleMarkdown({ content }: { content: string }) {
-  if (!content) return null;
-
-  // 1. Split by double newlines to find paragraphs
-  const paragraphs = content.split(/\n\n+/);
-
-  return (
-    <div className="space-y-4 text-gray-700 leading-relaxed">
-      {paragraphs.map((block, i) => {
-        // Check if block is a list
-        if (block.trim().startsWith("- ") || block.trim().startsWith("* ")) {
-          const items = block.split(/\n/).map(line => line.replace(/^[-*]\s+/, ""));
-          return (
-            <ul key={i} className="list-disc list-inside space-y-1 ml-2">
-              {items.map((item, j) => (
-                <li key={j} dangerouslySetInnerHTML={{ __html: formatInline(item) }} />
-              ))}
-            </ul>
-          );
-        }
-        // Regular paragraph
-        return <p key={i} dangerouslySetInnerHTML={{ __html: formatInline(block) }} />;
-      })}
-    </div>
-  );
-}
-
-// Basic formatter for **bold**
-function formatInline(text: string) {
-  // Escape HTML first to prevent injection
-  let safe = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  // Replace **text** with <strong>text</strong>
-  return safe.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
 }
