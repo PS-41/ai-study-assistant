@@ -228,6 +228,7 @@ export default function DocsPage() {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [renamingDoc, setRenamingDoc] = useState<Doc | null>(null);
   const [deletingDoc, setDeletingDoc] = useState<Doc | null>(null);
+  const [showBatchDelete, setShowBatchDelete] = useState(false);
 
   // Prompt banner text
   const [promptMode, setPromptMode] = useState<string | null>(null);
@@ -281,13 +282,17 @@ export default function DocsPage() {
     setDeletingDoc(null);
   };
 
-  const handleBatchDelete = async () => {
+  const handleBatchDelete = () => {
     if (selectedIds.size === 0) {
       setIsSelectMode(true);
       setPromptMode("Select one or more documents to delete.");
       return;
     }
-    if (!confirm(`Delete ${selectedIds.size} document(s)?`)) return;
+    // Open the custom modal instead of browser confirm
+    setShowBatchDelete(true);
+  };
+
+  const confirmBatchDelete = async () => {
     try {
       await Promise.all(
         Array.from(selectedIds).map((id) => api.delete(`/api/files/${id}`))
@@ -515,7 +520,7 @@ export default function DocsPage() {
         <div className="bg-white border border-gray-200 shadow-md rounded-xl p-5">
           <div className="flex items-center justify-between mb-3">
             <div>
-              <h3 className="font-bold text-gray-800 text-base">Bulk Actions</h3>
+              <h3 className="font-bold text-gray-800 text-base">Actions</h3>
               <p className="text-xs text-gray-500">
                 {hasSelection
                   ? `${selectedCount} document${selectedCount !== 1 ? "s" : ""} selected`
@@ -636,6 +641,15 @@ export default function DocsPage() {
               <Icons.Trash /> Delete Selected
             </button>
           </div>
+          {/* ADD THIS SECTION: */}
+          <div className="pt-4 border-t space-y-2">
+            <p className="text-xs text-gray-400 uppercase font-semibold tracking-wider mb-1">
+              Tips
+            </p>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              Use <span className="font-semibold">Select Documents</span> to select multiple files, then use the actions above to manage them.
+            </p>
+          </div>
         </div>
       </aside>
 
@@ -677,6 +691,15 @@ export default function DocsPage() {
           message={`Are you sure you want to delete "${deletingDoc.original_name}"? This cannot be undone.`}
           onClose={() => setDeletingDoc(null)}
           onConfirm={handleDelete}
+        />
+      )}
+      {/* ADD THIS: */}
+      {showBatchDelete && (
+        <DeleteModal
+          title="Delete Documents"
+          message={`Are you sure you want to delete ${selectedCount} document(s)? This cannot be undone.`}
+          onClose={() => setShowBatchDelete(false)}
+          onConfirm={confirmBatchDelete}
         />
       )}
     </div>

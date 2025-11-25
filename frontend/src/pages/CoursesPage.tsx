@@ -71,6 +71,12 @@ const Icons = {
       <line x1="9" y1="15" x2="15" y2="15"></line>
     </svg>
   ),
+  FolderMinus: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+      <line x1="9" y1="14" x2="15" y2="14"></line>
+    </svg>
+  ),
   Zap: () => (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
@@ -137,11 +143,17 @@ export default function CoursesPage() {
   const [showCourseModal, setShowCourseModal] = useState(false);
   const [showTopicModal, setShowTopicModal] = useState(false);
   const [activeGenType, setActiveGenType] = useState<"quiz" | "flashcards" | "summary" | null>(null);
+  
+  // Modals for Adding/Removing Docs
   const [showAddDocModal, setShowAddDocModal] = useState(false);
+  const [showRemoveDocModal, setShowRemoveDocModal] = useState(false);
   const [targetTopicId, setTargetTopicId] = useState<number | null>(null);
 
   const [renamingItem, setRenamingItem] = useState<{ type: "course" | "topic"; id: number; name: string } | null>(null);
   const [deletingItem, setDeletingItem] = useState<{ type: "course" | "topic"; id: number; name: string } | null>(null);
+  
+  // Batch Delete (Sidebar)
+  const [showBatchDelete, setShowBatchDelete] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -276,15 +288,43 @@ export default function CoursesPage() {
     return currentDocs.every((d) => selectedDocIds.has(d.id));
   };
 
+  // --- Adding/Removing Docs logic ---
   const openAddDocModal = (topicId: number | null) => {
     setTargetTopicId(topicId);
     setShowAddDocModal(true);
+  };
+
+  const openRemoveDocModal = (topicId: number | null) => {
+    setTargetTopicId(topicId);
+    setShowRemoveDocModal(true);
   };
 
   const cancelSelection = () => {
     setSelectedDocIds(new Set());
     setIsSelectMode(false);
     setPromptMode(null);
+  };
+
+  // Batch Delete (Files)
+  const handleBatchDelete = () => {
+    if (!selectedDocIds.size) {
+      setIsSelectMode(true);
+      setPromptMode("Select documents to delete.");
+      return;
+    }
+    setShowBatchDelete(true);
+  };
+
+  const confirmBatchDelete = async () => {
+    try {
+      await Promise.all(
+        Array.from(selectedDocIds).map((id) => api.delete(`/api/files/${id}`))
+      );
+      if (selectedCourseId) reloadCourseDetails(selectedCourseId);
+      cancelSelection();
+    } catch (e) {
+      alert("Failed to delete items");
+    }
   };
 
   const selectedCount = selectedDocIds.size;
@@ -383,16 +423,10 @@ export default function CoursesPage() {
                     </p>
                   )}
                 </div>
-                <div className="flex gap-2 items-center">
-                  {/* GENERATE / CANCEL BUTTON LOGIC */}
-                  {isSelectMode && selectedDocIds.size === 0 ? (
-                    <button
-                      onClick={cancelSelection}
-                      className="px-3 py-1.5 text-sm font-medium rounded-lg text-red-600 border border-red-100 bg-red-50 hover:bg-red-100 transition"
-                    >
-                      Cancel Selection
-                    </button>
-                  ) : !isSelectMode ? (
+                
+                <div className="flex gap-3 items-center">
+                  {/* New Select Mode Toolbar matching DocsPage */}
+                  <div className="flex items-center gap-2 bg-gray-50 p-1.5 border rounded-lg shadow-sm">
                     <button
                       onClick={() => {
                         setIsSelectMode(true);
@@ -400,26 +434,47 @@ export default function CoursesPage() {
                           "Select documents to Generate Content. Click on documents or topics to select them."
                         );
                       }}
-                      className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border rounded-lg shadow-sm hover:bg-gray-50 transition"
+                      title="Select documents for actions"
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-white hover:shadow-sm rounded-md transition"
                     >
-                      <Icons.Zap /> Generate New
+                      <Icons.Zap /> Generate Content
                     </button>
-                  ) : null}
+
+                    <div className="w-px h-5 bg-gray-300" />
+
+                    <button
+                      onClick={() => {
+                        if (isSelectMode) {
+                          cancelSelection();
+                        } else {
+                          setIsSelectMode(true);
+                          setPromptMode("Click on documents to select them.");
+                        }
+                      }}
+                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition ${
+                        isSelectMode
+                          ? "bg-white text-gray-900 shadow-sm"
+                          : "text-gray-700 hover:bg-white hover:shadow-sm"
+                      }`}
+                    >
+                      {isSelectMode ? "Cancel Selection" : "Select Documents"}
+                    </button>
+                  </div>
 
                   <button
                     onClick={() => setShowTopicModal(true)}
-                    className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-sm transition"
+                    className="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-sm transition"
                   >
                     + New Topic
                   </button>
                 </div>
               </header>
 
-              {/* Prompt Banner - show when in select mode but nothing is selected */}
-              {isSelectMode && selectedDocIds.size === 0 && (
+              {/* Prompt Banner */}
+              {isSelectMode && promptMode && (
                 <div className="bg-blue-50 border-b border-blue-100 text-blue-700 px-6 py-2 text-sm flex items-center flex-shrink-0">
                   <span className="mr-2">ℹ️</span>{" "}
-                  {promptMode || "Select documents to generate content."}
+                  {promptMode}
                 </div>
               )}
 
@@ -440,6 +495,7 @@ export default function CoursesPage() {
                         setExpandedTopics((p) => ({ ...p, none: !p["none"] }))
                       }
                       onAddDoc={() => openAddDocModal(null)}
+                      onRemoveDocs={() => openRemoveDocModal(null)}
                     />
                     {topics.map((t) => (
                       <TopicSection
@@ -459,6 +515,7 @@ export default function CoursesPage() {
                           }))
                         }
                         onAddDoc={() => openAddDocModal(t.id)}
+                        onRemoveDocs={() => openRemoveDocModal(t.id)}
                         onRename={() =>
                           setRenamingItem({
                             type: "topic",
@@ -486,11 +543,11 @@ export default function CoursesPage() {
           )}
         </main>
 
-        {/* Right Action Panel - always visible, similar to DocsPage */}
+        {/* Right Action Panel */}
         <aside className="w-80 bg-white border rounded-xl shadow-md p-5 flex flex-col gap-6 flex-shrink-0">
           <div className="flex items-center justify-between mb-1">
             <div>
-              <h3 className="font-bold text-gray-800 text-base">Course Actions</h3>
+              <h3 className="font-bold text-gray-800 text-base">Actions</h3>
               <p className="text-xs text-gray-500">
                 {hasSelection
                   ? `${selectedCount} document${selectedCount !== 1 ? "s" : ""} selected`
@@ -586,12 +643,22 @@ export default function CoursesPage() {
 
           <div className="pt-3 border-t space-y-2">
             <p className="text-xs text-gray-400 uppercase font-semibold tracking-wider mb-1">
+              Organize
+            </p>
+            <button
+              onClick={handleBatchDelete}
+              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg hover:bg-red-50 text-red-600 text-sm font-medium transition"
+            >
+              <Icons.Trash /> Delete Selected
+            </button>
+          </div>
+
+          <div className="pt-3 border-t space-y-2">
+            <p className="text-xs text-gray-400 uppercase font-semibold tracking-wider mb-1">
               Tips
             </p>
             <p className="text-xs text-gray-500 leading-relaxed">
-              Use <span className="font-semibold">Generate New</span> in the header,
-              then click on topics or documents to select them. Your selection will
-              show up here.
+              Use <span className="font-semibold">Generate Content or Select Documents</span> in the header to select multiple documents, then use the actions above to manage them. <span className="font-semibold">Delete Selected</span> will delete the selected documents permanently. Use the <span className="font-semibold">Remove Docs</span> button in a topic to unassign files without deleting them.
             </p>
           </div>
         </aside>
@@ -634,6 +701,19 @@ export default function CoursesPage() {
           />
         )}
 
+        {showRemoveDocModal && selectedCourseId && (
+          <RemoveDocsModal 
+            courseName={selectedCourse.name}
+            currentDocs={
+              targetTopicId 
+              ? groupedDocs[String(targetTopicId)] 
+              : groupedDocs["none"]
+            }
+            onClose={() => setShowRemoveDocModal(false)}
+            onSuccess={() => reloadCourseDetails(selectedCourseId)}
+          />
+        )}
+
         {renamingItem && (
           <RenameModal
             title={`Rename ${renamingItem.type === "course" ? "Course" : "Topic"}`}
@@ -648,6 +728,14 @@ export default function CoursesPage() {
             message={`Are you sure you want to delete "${deletingItem.name}"? This action cannot be undone.`}
             onClose={() => setDeletingItem(null)}
             onConfirm={handleDelete}
+          />
+        )}
+        {showBatchDelete && (
+          <DeleteModal
+            title="Delete Documents"
+            message={`Are you sure you want to delete ${selectedCount} document(s)? This will permanently delete the files.`}
+            onClose={() => setShowBatchDelete(false)}
+            onConfirm={confirmBatchDelete}
           />
         )}
       </div>
@@ -667,6 +755,7 @@ function TopicSection({
   expanded,
   onToggleExpand,
   onAddDoc,
+  onRemoveDocs,
   onRename,
   onDelete,
 }: any) {
@@ -722,12 +811,20 @@ function TopicSection({
             )}
           </div>
         </div>
-        <button
-          onClick={onAddDoc}
-          className="text-xs text-blue-600 hover:underline flex items-center gap-1 px-2"
-        >
-          <Icons.FilePlus /> Add Docs
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={onAddDoc}
+            className="text-xs text-blue-600 hover:underline flex items-center gap-1 px-2"
+          >
+            <Icons.FilePlus /> Add Docs
+          </button>
+          <button
+            onClick={onRemoveDocs}
+            className="text-xs text-red-600 hover:underline flex items-center gap-1 px-2 border-l"
+          >
+            <Icons.FolderMinus /> Remove Docs
+          </button>
+        </div>
       </div>
 
       {expanded && (
@@ -795,7 +892,7 @@ function TopicSection({
   );
 }
 
-// AddDocModal with nicer error handling (no browser alert)
+// AddDocModal
 function AddDocModal({ courseId, topicId, currentDocs, onClose, onSuccess }: any) {
   const [allDocs, setAllDocs] = useState<Doc[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -879,6 +976,96 @@ function AddDocModal({ courseId, topicId, currentDocs, onClose, onSuccess }: any
             className="px-4 py-2 text-sm bg-blue-600 text-white rounded disabled:opacity-50"
           >
             {saving ? "Adding..." : "Add Selected"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// RemoveDocsModal
+function RemoveDocsModal({ courseName, currentDocs, onClose, onSuccess }: any) {
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [removing, setRemoving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleRemove() {
+    setRemoving(true);
+    setError(null);
+    try {
+      await Promise.all(
+        Array.from(selected).map((id) =>
+          // Sending null course_id unassigns it from the course
+          api.post(`/api/files/${id}/assign`, {
+            course_id: null, 
+            topic_id: null,
+          })
+        )
+      );
+      onSuccess();
+      onClose();
+    } catch {
+      setError("Something went wrong while removing documents. Please try again.");
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 flex flex-col max-h-[80vh]">
+        <h3 className="text-lg font-bold mb-2">Remove Documents</h3>
+        <p className="text-sm text-gray-500 mb-4">
+          Select documents to remove from <strong>{courseName}</strong>. 
+          This will only unassign them; the files will remain in your documents.
+        </p>
+        
+        <div className="flex-1 overflow-y-auto border rounded p-2 space-y-2">
+          {(!currentDocs || currentDocs.length === 0) ? (
+             <div className="text-gray-400 text-sm text-center py-4">
+               No documents in this topic.
+             </div>
+          ) : currentDocs.map((d: any) => (
+            <label
+              key={d.id}
+              className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer"
+            >
+              <input
+                type="checkbox"
+                checked={selected.has(d.id)}
+                onChange={() =>
+                  setSelected((p) => {
+                    const n = new Set(p);
+                    if (n.has(d.id)) n.delete(d.id);
+                    else n.add(d.id);
+                    return n;
+                  })
+                }
+              />
+              <span className="text-sm truncate">{d.original_name}</span>
+            </label>
+          ))}
+        </div>
+        
+        {error && (
+          <div className="mt-3 text-xs text-red-600">
+            {error}
+          </div>
+        )}
+        
+        <div className="flex justify-end gap-2 mt-4">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleRemove}
+            disabled={removing || selected.size === 0}
+            className="px-4 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+          >
+            {removing ? "Removing..." : "Remove Selected"}
           </button>
         </div>
       </div>
