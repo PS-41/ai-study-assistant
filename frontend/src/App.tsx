@@ -33,8 +33,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 flex flex-col">
+      {/* Header: Full Width with side padding */}
       <header className="bg-white border-b sticky top-0 z-30 shadow-sm">
-        <nav className="container mx-auto max-w-6xl px-4 flex items-center justify-between h-16">
+        <nav className="w-full px-6 flex items-center justify-between h-16">
           <Link to="/" className="font-bold text-xl tracking-tight text-blue-600 flex items-center gap-2 hover:opacity-80 transition">
             <span className="text-2xl">📚</span> AI Study Assistant
           </Link>
@@ -74,7 +75,8 @@ export default function App() {
         </nav>
       </header>
 
-      <main className="flex-1 container mx-auto max-w-6xl px-4 py-8">
+      {/* Main: Full Width, Individual pages control their own max-width */}
+      <main className="flex-1 w-full flex flex-col">
         <Routes>
           <Route path="/" element={<Home me={me} />} />
           <Route path="/upload" element={<UploadPage />} />
@@ -85,7 +87,6 @@ export default function App() {
           <Route path="/docs" element={<DocsPage />} />
           <Route path="/docs/:id" element={<DocDetailsPage />} />
           
-          {/* Library Routes */}
           <Route path="/library" element={<LibraryPage />} />
           <Route path="/quiz" element={<QuizPage />} />
           <Route path="/summary/:id" element={<SummaryViewer />} />
@@ -95,8 +96,9 @@ export default function App() {
         </Routes>
       </main>
 
+      {/* Footer: Full Width */}
       <footer className="border-t bg-white py-8 mt-auto">
-        <div className="container mx-auto max-w-6xl px-4 flex flex-col md:flex-row justify-between items-center gap-4">
+        <div className="w-full px-6 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="text-sm text-gray-500">
             © 2025 AI Study Assistant. Built for students.
           </div>
@@ -129,8 +131,9 @@ const HomeIcons = {
 
 function Home({me}:{me:any}) {
   const nav = useNavigate();
+  // Added container centering here specifically for the home page content
   return (
-    <div className="space-y-16 pb-10">
+    <div className="space-y-16 pb-10 pt-8 px-4 max-w-6xl mx-auto w-full">
       {/* Hero Section */}
       <div className="flex flex-col items-center justify-center pt-16 pb-8 text-center space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
         <div className="text-6xl mb-2">🎓</div>
@@ -162,7 +165,7 @@ function Home({me}:{me:any}) {
       </div>
 
       {/* Features Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto px-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full">
         <FeatureCard 
           icon={<HomeIcons.Quiz />}
           title="AI Quizzes"
