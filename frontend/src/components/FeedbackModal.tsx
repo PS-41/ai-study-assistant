@@ -11,6 +11,7 @@ export default function FeedbackModal({ onClose }: Props) {
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState("");
   
   const [stats, setStats] = useState<{ average: number; count: number } | null>(null);
 
@@ -25,16 +26,18 @@ export default function FeedbackModal({ onClose }: Props) {
     if (rating === 0) return;
     
     setSubmitting(true);
+    setError(""); // <--- ADD THIS (Clear previous errors)
     try {
       await api.post("/api/reviews", { rating, comment });
       setSubmitted(true);
       // Refresh stats locally just for display
       setStats(prev => prev ? { ...prev, count: prev.count + 1 } : null);
     } catch (e: any) {
+      // REPLACE THE ALERT LOGIC WITH THIS:
       if (e?.response?.status === 401) {
-        alert("Please log in to submit feedback.");
+        setError("Please log in to submit feedback.");
       } else {
-        alert("Failed to submit feedback.");
+        setError("Failed to submit feedback. Please try again.");
       }
     } finally {
       setSubmitting(false);
@@ -113,6 +116,12 @@ export default function FeedbackModal({ onClose }: Props) {
                 onChange={(e) => setComment(e.target.value)}
               />
             </div>
+
+            {error && (
+              <div className="mt-3 p-2 bg-red-50 text-red-600 text-sm rounded-lg text-center">
+                {error}
+              </div>
+            )}
 
             <button
               type="submit"
