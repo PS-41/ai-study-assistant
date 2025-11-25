@@ -57,7 +57,6 @@ export default function App() {
                   <span className="text-xs text-gray-400">Welcome,</span>
                   <span className="text-gray-700 leading-none font-semibold">{me.name.split(" ")[0]}</span>
                 </div>
-                {/* ✅ New Profile link before Logout */}
                 <Link
                   to="/profile"
                   className={`text-xs transition hover:text-blue-600 ${
@@ -119,34 +118,84 @@ export default function App() {
   );
 }
 
+// --- Home Component ---
+
+const HomeIcons = {
+  Quiz: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-600"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>,
+  Flashcard: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>,
+  Summary: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-600"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>,
+  Folder: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-orange-600"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>,
+};
+
 function Home({me}:{me:any}) {
   const nav = useNavigate();
   return (
-    <div className="flex flex-col items-center justify-center py-20 text-center space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="text-7xl mb-2">🎓</div>
-      <div className="space-y-4 max-w-2xl">
-        <h1 className="text-5xl font-extrabold text-gray-900 tracking-tight">Master your study material</h1>
-        <p className="text-xl text-gray-600 leading-relaxed">
-          Upload your PDFs or PowerPoints. We'll generate intelligent quizzes, flashcards, and summaries instantly.
-        </p>
-      </div>
-      
-      <div className="flex gap-4 pt-4">
-        <button
-          onClick={() => nav(me ? "/upload" : "/signup")}
-          className="px-8 py-4 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-        >
-          {me ? "Upload New File" : "Get Started for Free"}
-        </button>
-        {me && (
+    <div className="space-y-16 pb-10">
+      {/* Hero Section */}
+      <div className="flex flex-col items-center justify-center pt-16 pb-8 text-center space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <div className="text-6xl mb-2">🎓</div>
+        <div className="space-y-3 max-w-2xl">
+          <h1 className="text-4xl sm:text-5xl font-extrabold text-gray-900 tracking-tight">
+            Master your study material
+          </h1>
+          <p className="text-lg text-gray-600 leading-relaxed max-w-xl mx-auto">
+            Upload your course documents. We'll generate intelligent quizzes, flashcards, and summaries to help you learn faster.
+          </p>
+        </div>
+        
+        <div className="flex flex-wrap justify-center gap-4 pt-2">
           <button
-            onClick={() => nav("/library")}
-            className="px-8 py-4 bg-white text-gray-700 border rounded-xl font-semibold hover:bg-gray-50 transition shadow-sm hover:shadow-md"
+            onClick={() => nav(me ? "/upload" : "/signup")}
+            className="px-6 py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition shadow-md hover:shadow-lg transform hover:-translate-y-0.5"
           >
-            Go to Library
+            {me ? "Upload New File" : "Get Started for Free"}
           </button>
-        )}
+          {me && (
+            <button
+              onClick={() => nav("/library")}
+              className="px-6 py-3 bg-white text-gray-700 border rounded-xl font-semibold hover:bg-gray-50 transition shadow-sm hover:shadow-md"
+            >
+              Go to Library
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Features Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto px-2">
+        <FeatureCard 
+          icon={<HomeIcons.Quiz />}
+          title="AI Quizzes"
+          desc="Test your knowledge with auto-generated multiple choice questions from your slides."
+        />
+        <FeatureCard 
+          icon={<HomeIcons.Flashcard />}
+          title="Flashcards"
+          desc="Active recall made easy. Create decks instantly to memorize definitions and terms."
+        />
+        <FeatureCard 
+          icon={<HomeIcons.Summary />}
+          title="Summaries"
+          desc="Digest long readings in seconds. Get concise or detailed overviews of any PDF."
+        />
+        <FeatureCard 
+          icon={<HomeIcons.Folder />}
+          title="Organize"
+          desc="Keep everything structured. Group your documents and study aids by Course and Topic."
+        />
+      </div>
+    </div>
+  );
+}
+
+function FeatureCard({ icon, title, desc }: { icon: React.ReactNode, title: string, desc: string }) {
+  return (
+    <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all hover:-translate-y-1">
+      <div className="mb-4 bg-gray-50 w-12 h-12 rounded-lg flex items-center justify-center">
+        {icon}
+      </div>
+      <h3 className="font-semibold text-gray-900 mb-2 text-lg">{title}</h3>
+      <p className="text-sm text-gray-500 leading-relaxed">{desc}</p>
     </div>
   );
 }
