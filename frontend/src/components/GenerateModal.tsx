@@ -75,6 +75,8 @@ export default function GenerateModal({ type, docIds, onClose, onSuccess }: Prop
         nav(`/summary/${data.id}`);
       }
 
+      onSuccess?.();
+
     } catch (err: any) {
       alert(err?.response?.data?.error || "Generation failed");
       setShowProgress(false);
