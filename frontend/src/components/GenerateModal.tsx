@@ -43,7 +43,7 @@ export default function GenerateModal({ type, docIds, onClose, onSuccess }: Prop
     e.preventDefault();
     setIsBusy(true);
     
-    if (type !== "summary") setShowProgress(true);
+    setShowProgress(true);
 
     try {
       const finalTitle = title.trim() || defaultTitle;
@@ -69,10 +69,10 @@ export default function GenerateModal({ type, docIds, onClose, onSuccess }: Prop
       // Handle Success
       if (type === "quiz") {
         nav(`/quiz?quizId=${data.quiz_id}`);
-      } else {
-        alert(`${finalTitle} created successfully!`);
-        onClose();
-        if (onSuccess) onSuccess();
+      } else if (type === "flashcards") {
+        nav(`/flashcards/${data.set_id}`);
+      } else if (type === "summary") {
+        nav(`/summary/${data.id}`);
       }
 
     } catch (err: any) {
