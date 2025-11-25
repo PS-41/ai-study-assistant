@@ -159,3 +159,11 @@ class Topic(Base):
     
     course = relationship("Course", back_populates="topics")
     documents = relationship("Document", back_populates="topic", lazy="selectin")
+
+class Review(Base):
+    __tablename__ = "reviews"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    rating = Column(Integer, nullable=False)  # 1 to 5
+    comment = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

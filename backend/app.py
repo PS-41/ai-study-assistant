@@ -13,6 +13,7 @@ from backend.routes_flashcards import bp as flashcards_bp
 from backend.routes_auth import bp as auth_bp
 from backend.routes_courses import bp as courses_bp
 from backend.routes_topics import bp as topics_bp
+from backend.routes_reviews import bp as reviews_bp
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev")
@@ -38,6 +39,7 @@ app.register_blueprint(summaries_bp, url_prefix="/api/summaries")
 app.register_blueprint(flashcards_bp, url_prefix="/api/flashcards")
 app.register_blueprint(courses_bp, url_prefix="/api/courses")
 app.register_blueprint(topics_bp, url_prefix="/api/topics")
+app.register_blueprint(reviews_bp, url_prefix="/api/reviews")
 
 if __name__ == "__main__":
     app.run(debug=True)

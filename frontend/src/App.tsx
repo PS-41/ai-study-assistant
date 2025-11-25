@@ -11,6 +11,7 @@ import LibraryPage from "./pages/LibraryPage";
 import SummaryViewer from "./pages/SummaryViewer";     
 import FlashcardViewer from "./pages/FlashcardViewer"; 
 import ProfilePage from "./pages/ProfilePage";
+import FeedbackModal from "./components/FeedbackModal";
 import { useEffect, useState } from "react";
 import { api } from "./lib/api";
 
@@ -18,6 +19,7 @@ export default function App() {
   const [me, setMe] = useState<{id:number;email:string;name:string}|null>(null);
   const nav = useNavigate();
   const loc = useLocation(); 
+  const [showFeedback, setShowFeedback] = useState(false);
 
   useEffect(() => {
     api.get("/api/auth/me")
@@ -103,7 +105,17 @@ export default function App() {
             © 2025 AI Study Assistant. Built for students.
           </div>
           
-          <div className="flex gap-6 text-sm font-medium text-gray-600">
+          <div className="flex gap-6 text-sm font-medium text-gray-600 items-center">
+            <button 
+              onClick={() => setShowFeedback(true)}
+              className="hover:text-blue-600 transition flex items-center gap-2"
+            >
+              Feedback
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+            </button>
+
+            <div className="w-px h-4 bg-gray-300"></div>
+
             <a 
               href="https://www.linkedin.com/in/ps41/" 
               target="_blank" 
@@ -116,6 +128,8 @@ export default function App() {
           </div>
         </div>
       </footer>
+      {/* Modal Render */}
+      {showFeedback && <FeedbackModal onClose={() => setShowFeedback(false)} />}
     </div>
   );
 }
