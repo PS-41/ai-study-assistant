@@ -701,7 +701,7 @@ export default function CoursesPage() {
           />
         )}
 
-        {showRemoveDocModal && selectedCourseId && (
+        {showRemoveDocModal && selectedCourse && (
           <RemoveDocsModal 
             courseName={selectedCourse.name}
             currentDocs={
@@ -710,7 +710,7 @@ export default function CoursesPage() {
               : groupedDocs["none"]
             }
             onClose={() => setShowRemoveDocModal(false)}
-            onSuccess={() => reloadCourseDetails(selectedCourseId)}
+            onSuccess={() => reloadCourseDetails(selectedCourse.id)}
           />
         )}
 
