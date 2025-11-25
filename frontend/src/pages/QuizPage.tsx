@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 
+// --- Types ---
 type Q = {
   id: number;
   type: string;
@@ -26,6 +27,14 @@ type AttemptAnswerDto = {
   explanation: string;
   user_answer: string;
   is_correct: boolean;
+};
+
+// --- Icons ---
+const Icons = {
+  Eye: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>,
+  EyeOff: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></svg>,
+  Refresh: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>,
+  Exit: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>,
 };
 
 export default function QuizPage() {
@@ -183,6 +192,7 @@ export default function QuizPage() {
     setShowAnswers(next);
     if (!next) return;
 
+    // If we already fetched answers, don't fetch again
     if (Object.keys(answers).length > 0) return;
 
     setAnswersLoading(true);
@@ -192,7 +202,6 @@ export default function QuizPage() {
       for (const a of (data.answers || []) as A[]) dict[a.id] = a;
       setAnswers(dict);
     } catch (e: any) {
-        // Error handling preserved
       const status = e?.response?.status;
       if (status === 401) {
         nav("/login");
@@ -207,6 +216,17 @@ export default function QuizPage() {
     }
   }
 
+  // Reloads the page in a clean state
+  function retakeQuiz() {
+    // Navigate to the quiz URL without the attemptId, forcing a refresh if needed
+    if (isReplay) {
+      nav(`/quiz?quizId=${quizId}`);
+    } else {
+      // If we are already on the clean URL but just finished submitting, we need to reset state
+      window.location.reload();
+    }
+  }
+
   if (!quizId) return <div className="p-8 text-center text-gray-500">Invalid quiz.</div>;
   if (loading) return <div className="p-8 text-center text-gray-500">Loading quiz...</div>;
   if (!qs.length) return <div className="p-8 text-center text-gray-500">No questions in this quiz.</div>;
@@ -217,24 +237,59 @@ export default function QuizPage() {
     <div className="min-h-screen bg-gray-50 pb-24">
       {/* Top Bar */}
       <div className="bg-white border-b shadow-sm sticky top-16 z-20">
-        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-              <span className="bg-blue-100 text-blue-600 p-1.5 rounded-md"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg></span>
-              Quiz Session {isReplay && <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full ml-2">Review Mode</span>}
+        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
+          {/* Left: Title */}
+          <div className="flex items-center gap-3">
+            <div className="bg-blue-100 text-blue-600 p-1.5 rounded-md">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
+            </div>
+            <h2 className="text-base font-bold text-gray-800">
+              Quiz Session {isReplay && <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full ml-2 border">Review Mode</span>}
             </h2>
           </div>
           
-          <div className="flex items-center gap-3">
-             {/* Score Badge */}
+          {/* Right: Controls */}
+          <div className="flex items-center gap-2">
+            {/* Score Badge */}
             {typeof score === "number" && (
-              <div className={`px-3 py-1 rounded-full text-sm font-bold ${score >= 70 ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"}`}>
+              <div className={`hidden sm:block px-3 py-1 rounded-full text-xs font-bold border ${score >= 70 ? "bg-green-50 text-green-700 border-green-200" : "bg-orange-50 text-orange-700 border-orange-200"}`}>
                 Score: {score}%
               </div>
             )}
+
+            {/* Show Answers Toggle (Always Available) */}
+            <button
+                onClick={toggleAnswers}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition border ${
+                    showAnswers 
+                    ? "bg-blue-50 text-blue-700 border-blue-200" 
+                    : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+                }`}
+                title={showAnswers ? "Hide Correct Answers" : "Show Correct Answers"}
+            >
+                {answersLoading ? (
+                    <span className="animate-spin">⌛</span>
+                ) : showAnswers ? (
+                    <><Icons.EyeOff /> <span className="hidden sm:inline">Hide Answers</span></>
+                ) : (
+                    <><Icons.Eye /> <span className="hidden sm:inline">Show Answers</span></>
+                )}
+            </button>
+
+            {/* Retake Button (Visible if submitted or replay) */}
+            {(submitted || isReplay) && (
+                <button 
+                    onClick={retakeQuiz}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+                >
+                    <Icons.Refresh /> <span className="hidden sm:inline">Retake</span>
+                </button>
+            )}
             
-            <button onClick={() => nav(-1)} className="text-sm text-gray-500 hover:text-gray-800 font-medium px-3 py-1.5 hover:bg-gray-100 rounded-lg transition">
-              Exit
+            <div className="w-px h-4 bg-gray-300 mx-1"></div>
+
+            <button onClick={() => nav(-1)} className="text-gray-400 hover:text-gray-700 p-1.5 transition" title="Exit">
+              <Icons.Exit />
             </button>
           </div>
         </div>
@@ -247,19 +302,8 @@ export default function QuizPage() {
         )}
       </div>
 
-      <div className="max-w-3xl mx-auto px-4 py-8 space-y-8">
-        {/* Controls for review */}
-        {(submitted || isReplay) && (
-            <div className="flex justify-end mb-4">
-                <button
-                    onClick={toggleAnswers}
-                    className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
-                >
-                    {answersLoading ? "Loading..." : showAnswers ? "Hide Correct Answers" : "Show Correct Answers"}
-                </button>
-            </div>
-        )}
-
+      {/* Quiz Content */}
+      <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
         {qs.map((q, i) => {
           const chosen = sel[q.id] || "";
           const a = answers[q.id];
@@ -270,13 +314,15 @@ export default function QuizPage() {
           const chosenIsWrong = submitted && detail?.is_correct === false;
 
           return (
-            <div key={q.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
-              <div className="p-6 border-b border-gray-50 bg-gray-50/50">
-                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 block">Question {i + 1}</span>
-                <h3 className="text-lg font-medium text-gray-900 leading-relaxed">{q.prompt}</h3>
+            <div key={q.id} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              {/* Question Header */}
+              <div className="p-5 border-b border-gray-50 bg-gray-50/30">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Question {i + 1}</span>
+                <h3 className="text-base font-medium text-gray-900 leading-relaxed">{q.prompt}</h3>
               </div>
               
-              <div className="p-6 space-y-3">
+              {/* Options */}
+              <div className="p-5 space-y-2">
                 {q.options.map((opt, idx) => {
                   const isChosen = chosen === opt;
                   const isCorrectReveal = reveal && a?.answer === opt;
@@ -285,20 +331,20 @@ export default function QuizPage() {
                   const wrongInReplay = isReplay && chosenIsWrong && isChosen;
 
                   // Determine styles
-                  let containerClass = "relative flex items-center p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 ";
-                  let circleClass = "w-5 h-5 rounded-full border-2 flex items-center justify-center mr-4 flex-shrink-0 transition-colors ";
+                  let containerClass = "relative flex items-center p-3 rounded-lg border cursor-pointer transition-all duration-200 text-sm ";
+                  let circleClass = "w-4 h-4 rounded-full border flex items-center justify-center mr-3 flex-shrink-0 transition-colors ";
                   let textClass = "text-gray-700";
 
                   if (isCorrectReveal || chosenCorrectAfterSubmit) {
-                      containerClass += "border-emerald-500 bg-emerald-50 ";
+                      containerClass += "border-emerald-500 bg-emerald-50/50 ";
                       circleClass += "border-emerald-500 bg-emerald-500 text-white ";
                       textClass = "text-emerald-900 font-medium";
                   } else if (wrongAfterSubmit || wrongInReplay) {
-                      containerClass += "border-red-200 bg-red-50 ";
+                      containerClass += "border-red-200 bg-red-50/50 ";
                       circleClass += "border-red-400 bg-red-400 text-white ";
                       textClass = "text-red-900";
                   } else if (isChosen) {
-                      containerClass += "border-blue-500 bg-blue-50 ";
+                      containerClass += "border-blue-500 bg-blue-50/50 ";
                       circleClass += "border-blue-500 bg-blue-500 text-white ";
                       textClass = "text-blue-900 font-medium";
                   } else {
@@ -325,19 +371,19 @@ export default function QuizPage() {
                         }}
                       />
                       <div className={circleClass}>
-                        {isChosen && <div className="w-2 h-2 bg-white rounded-full"></div>}
+                        {isChosen && <div className="w-1.5 h-1.5 bg-white rounded-full"></div>}
                       </div>
                       <span className={textClass}>{opt}</span>
                       
                       {/* Status Icons */}
                       {(isCorrectReveal || chosenCorrectAfterSubmit) && (
                           <div className="absolute right-4 text-emerald-600">
-                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
                           </div>
                       )}
                       {(wrongAfterSubmit || wrongInReplay) && (
                           <div className="absolute right-4 text-red-500">
-                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                           </div>
                       )}
                     </label>
@@ -345,16 +391,16 @@ export default function QuizPage() {
                 })}
               </div>
 
+              {/* Explanation / Answer Reveal */}
               {reveal && a && (
-                <div className="px-6 pb-6 pt-0 animate-in fade-in slide-in-from-top-2">
-                  <div className="bg-emerald-50/50 border border-emerald-100 rounded-lg p-4 text-sm">
+                <div className="px-5 pb-5 pt-0 animate-in fade-in slide-in-from-top-1">
+                  <div className="bg-emerald-50/50 border border-emerald-100 rounded-lg p-3 text-sm">
                     <div className="flex items-center gap-2 mb-1">
-                        <span className="font-bold text-emerald-800">Correct Answer:</span>
+                        <span className="font-bold text-emerald-800 text-xs uppercase tracking-wide">Correct Answer</span>
                         <span className="font-mono font-semibold text-emerald-700">{a.answer}</span>
                     </div>
                     {a.explanation && (
-                      <div className="text-emerald-900/80 mt-1 leading-relaxed">
-                        <span className="font-semibold">Explanation: </span>
+                      <div className="text-emerald-900/80 mt-1 leading-relaxed text-xs">
                         {a.explanation}
                       </div>
                     )}
@@ -366,17 +412,17 @@ export default function QuizPage() {
         })}
       </div>
 
-      {/* Bottom Action Bar */}
+      {/* Bottom Action Bar - only if active */}
       {!isReplay && !submitted && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-30">
             <div className="max-w-3xl mx-auto flex items-center justify-between">
-                <div className="text-sm text-gray-500">
+                <div className="text-xs text-gray-500 font-medium">
                     {Object.keys(sel).length} of {qs.length} answered
                 </div>
                 <button
                     onClick={submit}
                     disabled={submitting}
-                    className="px-8 py-2.5 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md transition-all hover:-translate-y-0.5 active:translate-y-0"
+                    className="px-6 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md transition-all hover:-translate-y-0.5 active:translate-y-0"
                 >
                     {submitting ? "Submitting..." : "Submit Quiz"}
                 </button>
@@ -387,7 +433,7 @@ export default function QuizPage() {
       {/* Result Modal */}
       {resultOpen && result && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-2xl relative transform transition-all scale-100">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl relative transform transition-all scale-100">
             <button
                 onClick={() => setResultOpen(false)}
                 className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
@@ -396,32 +442,33 @@ export default function QuizPage() {
             </button>
             
             <div className="text-center">
-                <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-blue-50 mb-4 relative">
+                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-blue-50 mb-4 relative">
                     <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
                         <path className="text-blue-100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" />
                         <path className="text-blue-600" strokeDasharray={`${result.pct}, 100`} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" />
                     </svg>
-                    <span className="absolute text-2xl font-bold text-blue-700">{result.pct}%</span>
+                    <span className="absolute text-lg font-bold text-blue-700">{result.pct}%</span>
                 </div>
                 
-                <h3 className="text-2xl font-bold text-gray-900 mb-1">Quiz Complete!</h3>
-                <p className="text-gray-500 mb-6">You got {result.correct} out of {result.total} questions correct.</p>
+                <h3 className="text-xl font-bold text-gray-900 mb-1">Quiz Complete!</h3>
+                <p className="text-sm text-gray-500 mb-6">You got {result.correct} out of {result.total} questions correct.</p>
                 
-                <div className="grid grid-cols-2 gap-3">
-                    <button
-                        onClick={() => setResultOpen(false)}
-                        className="px-4 py-2.5 rounded-xl border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition"
-                    >
-                        Close
-                    </button>
+                <div className="flex flex-col gap-2">
                     <button
                         onClick={async () => {
-                        if (!showAnswers) await toggleAnswers();
-                        setResultOpen(false);
+                            // Ensure answers are shown when reviewing results
+                            if (!showAnswers) await toggleAnswers();
+                            setResultOpen(false);
                         }}
-                        className="px-4 py-2.5 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 shadow-sm transition"
+                        className="w-full px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 shadow-sm transition"
                     >
-                        View Answers
+                        Review Answers
+                    </button>
+                    <button
+                        onClick={retakeQuiz}
+                        className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition"
+                    >
+                        Retake Quiz
                     </button>
                 </div>
             </div>
