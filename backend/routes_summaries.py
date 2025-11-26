@@ -89,6 +89,7 @@ def get_summary(summary_id):
 def generate_summary():
     payload = request.get_json(force=True)
     title = payload.get("title", "Generated Summary")
+    detail_level = payload.get("detail_level", "brief")
     
     db = get_db()
     docs, err = _fetch_docs_from_payload(payload)
@@ -107,7 +108,7 @@ def generate_summary():
         return jsonify({"error": "not enough text"}), 400
 
     try:
-        text = generate_summary_from_source(combined)
+        text = generate_summary_from_source(combined, detail_level=detail_level)
     except Exception as e:
         return jsonify({"error": f"generation failed: {e}"}), 500
 

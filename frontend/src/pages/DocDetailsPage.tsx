@@ -519,14 +519,32 @@ export default function DocDetailsPage() {
               </div>
               <div className="prose prose-slate prose-lg max-w-none text-gray-700 leading-relaxed">
                 {summary.content.split("\n").map((line, i) => {
-                  if (line.trim().startsWith("- ") || line.trim().startsWith("* ")) {
+                  const trimmed = line.trim();
+
+                  // bullet lines
+                  if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+                    const bulletText = trimmed.replace(/^[-*]\s/, "");
+                    const parts = bulletText.split(/(\*\*.*?\*\*)/g);
+
                     return (
                       <li key={i} className="ml-4 list-disc my-2 marker:text-gray-400">
-                        {line.replace(/^[-*]\s/, "")}
+                        {parts.map((part, j) =>
+                          part.startsWith("**") && part.endsWith("**") ? (
+                            <strong key={j} className="font-semibold text-gray-900">
+                              {part.slice(2, -2)}
+                            </strong>
+                          ) : (
+                            part
+                          )
+                        )}
                       </li>
                     );
                   }
-                  if (line.trim() === "") return <br key={i} />;
+
+                  // blank line → spacing
+                  if (trimmed === "") return <br key={i} />;
+
+                  // normal paragraph with **bold** support
                   const parts = line.split(/(\*\*.*?\*\*)/g);
                   return (
                     <p key={i} className="mb-4 text-base">

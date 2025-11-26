@@ -46,9 +46,9 @@ export default function App() {
             {me ? (
               <>
                 <Link to="/upload" className={`transition hover:text-blue-600 ${loc.pathname === '/upload' ? 'text-blue-600' : 'text-gray-600'}`}>Upload</Link>
-                <Link to="/courses" className={`transition hover:text-blue-600 ${loc.pathname === '/courses' ? 'text-blue-600' : 'text-gray-600'}`}>Courses</Link>
-                <Link to="/docs" className={`transition hover:text-blue-600 ${loc.pathname === '/docs' ? 'text-blue-600' : 'text-gray-600'}`}>Documents</Link>
-                <Link to="/library" className={`transition hover:text-blue-600 ${loc.pathname === '/library' ? 'text-blue-600' : 'text-gray-600'}`}>Library</Link>
+                <Link to="/courses" className={`transition hover:text-blue-600 ${loc.pathname === '/courses' ? 'text-blue-600' : 'text-gray-600'}`}>My Courses</Link>
+                <Link to="/docs" className={`transition hover:text-blue-600 ${loc.pathname === '/docs' ? 'text-blue-600' : 'text-gray-600'}`}>My Documents</Link>
+                <Link to="/library" className={`transition hover:text-blue-600 ${loc.pathname === '/library' ? 'text-blue-600' : 'text-gray-600'}`}>My Library</Link>
               </>
             ) : (
               <Link to="/login" className="text-gray-600 hover:text-blue-600 transition">Login</Link>

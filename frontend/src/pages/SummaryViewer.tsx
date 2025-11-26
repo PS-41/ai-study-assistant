@@ -91,9 +91,20 @@ export default function SummaryViewer() {
 
               // bullet lines
               if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+                const bulletText = trimmed.replace(/^[-*]\s/, "");
+                const parts = bulletText.split(/(\*\*.*?\*\*)/g);
+
                 return (
                   <li key={i} className="ml-4 list-disc my-2 marker:text-gray-400">
-                    {trimmed.replace(/^[-*]\s/, "")}
+                    {parts.map((part, j) =>
+                      part.startsWith("**") && part.endsWith("**") ? (
+                        <strong key={j} className="font-semibold text-gray-900">
+                          {part.slice(2, -2)}
+                        </strong>
+                      ) : (
+                        part
+                      )
+                    )}
                   </li>
                 );
               }

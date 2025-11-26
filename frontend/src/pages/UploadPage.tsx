@@ -100,7 +100,7 @@ export default function UploadPage() {
                 id="file-upload" 
                 className="hidden" 
                 onChange={handleFileSelect} 
-                accept=".pdf,.ppt,.pptx,application/pdf"
+                accept=".pdf,.ppt,.pptx,.txt,application/pdf,text/plain"
               />
               
               {!file ? (
