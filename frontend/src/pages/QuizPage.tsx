@@ -6,7 +6,7 @@ import { api } from "../lib/api";
 // --- Types ---
 type Q = {
   id: number;
-  type: string;
+  type: string; // 'mcq' | 'true_false' | 'short_answer'
   prompt: string;
   options: string[];
 };
@@ -65,7 +65,7 @@ export default function QuizPage() {
 
   const [showAnswers, setShowAnswers] = useState(false);
   const [answersLoading, setAnswersLoading] = useState(false);
-  const [answers, setAnswers] = useState<Record<number, A>>({}); 
+  const [answers, setAnswers] = useState<Record<number, A>>({});
 
   useEffect(() => {
     if (!quizId) {
@@ -168,7 +168,7 @@ export default function QuizPage() {
         total: data.total,
         pct: data.score_pct,
       });
-      setResultOpen(true); 
+      setResultOpen(true);
 
       const map: Record<number, { is_correct: boolean; user_answer: string }> =
         {};
@@ -313,100 +313,145 @@ export default function QuizPage() {
           const chosenIsCorrect = submitted && detail?.is_correct === true;
           const chosenIsWrong = submitted && detail?.is_correct === false;
 
+          // Determine Question Type
+          const isMCQ = !q.type || q.type === "mcq"; // Default to MCQ if missing
+          const isTF = q.type === "true_false";
+          const isSA = q.type === "short_answer";
+
           return (
-            <div key={q.id} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div key={q.id} className={`bg-white rounded-xl border shadow-sm overflow-hidden ${
+                submitted 
+                  ? (chosenIsCorrect ? "border-emerald-200 ring-1 ring-emerald-100" : "border-red-200 ring-1 ring-red-100") 
+                  : "border-gray-200"
+            }`}>
               {/* Question Header */}
-              <div className="p-5 border-b border-gray-50 bg-gray-50/30">
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Question {i + 1}</span>
-                <h3 className="text-base font-medium text-gray-900 leading-relaxed">{q.prompt}</h3>
+              <div className={`p-5 border-b ${submitted ? (chosenIsCorrect ? "bg-emerald-50/30" : "bg-red-50/30") : "bg-gray-50/30 border-gray-50"}`}>
+                <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Question {i + 1}</span>
+                        <h3 className="text-base font-medium text-gray-900 leading-relaxed">{q.prompt}</h3>
+                    </div>
+                    {/* Result Icon */}
+                    {submitted && (
+                        <div className={`ml-3 ${chosenIsCorrect ? "text-emerald-500" : "text-red-500"}`}>
+                            {chosenIsCorrect ? (
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            ) : (
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            )}
+                        </div>
+                    )}
+                </div>
               </div>
               
-              {/* Options */}
-              <div className="p-5 space-y-2">
-                {q.options.map((opt, idx) => {
-                  const isChosen = chosen === opt;
-                  const isCorrectReveal = reveal && a?.answer === opt;
-                  const chosenCorrectAfterSubmit = chosenIsCorrect && isChosen;
-                  const wrongAfterSubmit = !isReplay && chosenIsWrong && isChosen;
-                  const wrongInReplay = isReplay && chosenIsWrong && isChosen;
+              {/* Body based on type */}
+              <div className="p-5">
+                
+                {/* MCQ & True/False (Radio) */}
+                {(isMCQ || isTF) && (
+                    <div className="space-y-2">
+                        {q.options.map((opt, idx) => {
+                            const isChosen = chosen === opt;
+                            const isCorrectAnswer = reveal && a?.answer === opt; // For Show Answers
+                            
+                            const chosenCorrectAfterSubmit = chosenIsCorrect && isChosen;
+                            const wrongAfterSubmit = !isReplay && chosenIsWrong && isChosen;
+                            const wrongInReplay = isReplay && chosenIsWrong && isChosen;
 
-                  // Determine styles
-                  let containerClass = "relative flex items-center p-3 rounded-lg border cursor-pointer transition-all duration-200 text-sm ";
-                  let circleClass = "w-4 h-4 rounded-full border flex items-center justify-center mr-3 flex-shrink-0 transition-colors ";
-                  let textClass = "text-gray-700";
+                            // Style Logic
+                            let styleClass = "relative flex items-center p-3 rounded-lg border cursor-pointer transition-all text-sm ";
+                            let dotClass = "w-4 h-4 rounded-full border flex items-center justify-center mr-3 flex-shrink-0 ";
+                            let textClass = "text-gray-700";
 
-                  if (isCorrectReveal || chosenCorrectAfterSubmit) {
-                      containerClass += "border-emerald-500 bg-emerald-50/50 ";
-                      circleClass += "border-emerald-500 bg-emerald-500 text-white ";
-                      textClass = "text-emerald-900 font-medium";
-                  } else if (wrongAfterSubmit || wrongInReplay) {
-                      containerClass += "border-red-200 bg-red-50/50 ";
-                      circleClass += "border-red-400 bg-red-400 text-white ";
-                      textClass = "text-red-900";
-                  } else if (isChosen) {
-                      containerClass += "border-blue-500 bg-blue-50/50 ";
-                      circleClass += "border-blue-500 bg-blue-500 text-white ";
-                      textClass = "text-blue-900 font-medium";
-                  } else {
-                      containerClass += "border-gray-200 hover:border-blue-200 hover:bg-gray-50 ";
-                      circleClass += "border-gray-300 ";
-                  }
+                            if (isCorrectAnswer || chosenCorrectAfterSubmit) {
+                                styleClass += "border-emerald-500 bg-emerald-50/50 ring-1 ring-emerald-200 ";
+                                dotClass += "border-emerald-500 bg-emerald-500 text-white ";
+                                textClass = "text-emerald-900 font-medium";
+                            } else if (wrongAfterSubmit || wrongInReplay) {
+                                styleClass += "border-red-200 bg-red-50/50 ";
+                                dotClass += "border-red-400 bg-red-400 text-white ";
+                                textClass = "text-red-900";
+                            } else if (isChosen) {
+                                styleClass += "border-blue-500 bg-blue-50/50 ";
+                                dotClass += "border-blue-500 bg-blue-500 text-white ";
+                                textClass = "text-blue-900 font-medium";
+                            } else {
+                                styleClass += "border-gray-200 hover:bg-gray-50 ";
+                                dotClass += "border-gray-300 ";
+                            }
 
-                  // Disabled state
-                  if (isReplay || submitted) {
-                      containerClass += "cursor-default ";
-                  }
+                            if (isReplay || submitted) styleClass += "cursor-default ";
 
-                  return (
-                    <label key={idx} className={containerClass}>
-                      <input
-                        type="radio"
-                        name={`q_${q.id}`}
-                        className="hidden"
-                        checked={isChosen}
-                        disabled={isReplay || submitted} // Disable after submit
-                        onChange={() => {
-                          if (isReplay || submitted) return;
-                          setSel((prev) => ({ ...prev, [q.id]: opt }));
-                        }}
-                      />
-                      <div className={circleClass}>
-                        {isChosen && <div className="w-1.5 h-1.5 bg-white rounded-full"></div>}
-                      </div>
-                      <span className={textClass}>{opt}</span>
-                      
-                      {/* Status Icons */}
-                      {(isCorrectReveal || chosenCorrectAfterSubmit) && (
-                          <div className="absolute right-4 text-emerald-600">
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                          </div>
-                      )}
-                      {(wrongAfterSubmit || wrongInReplay) && (
-                          <div className="absolute right-4 text-red-500">
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                          </div>
-                      )}
-                    </label>
-                  );
-                })}
-              </div>
-
-              {/* Explanation / Answer Reveal */}
-              {reveal && a && (
-                <div className="px-5 pb-5 pt-0 animate-in fade-in slide-in-from-top-1">
-                  <div className="bg-emerald-50/50 border border-emerald-100 rounded-lg p-3 text-sm">
-                    <div className="flex items-center gap-2 mb-1">
-                        <span className="font-bold text-emerald-800 text-xs uppercase tracking-wide">Correct Answer</span>
-                        <span className="font-mono font-semibold text-emerald-700">{a.answer}</span>
+                            return (
+                                <label key={idx} className={styleClass}>
+                                    <input 
+                                        type="radio" 
+                                        name={`q_${q.id}`} 
+                                        className="hidden" 
+                                        checked={isChosen}
+                                        disabled={isReplay || submitted}
+                                        onChange={() => !isReplay && !submitted && setSel(p => ({...p, [q.id]: opt}))}
+                                    />
+                                    <div className={dotClass}>
+                                        {isChosen && <div className="w-1.5 h-1.5 bg-white rounded-full"></div>}
+                                    </div>
+                                    <span className={textClass}>
+                                        {opt}
+                                    </span>
+                                    
+                                    {/* Status Icons within Option */}
+                                    {(isCorrectAnswer || chosenCorrectAfterSubmit) && (
+                                        <div className="absolute right-4 text-emerald-600">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                        </div>
+                                    )}
+                                    {(wrongAfterSubmit || wrongInReplay) && (
+                                        <div className="absolute right-4 text-red-500">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                        </div>
+                                    )}
+                                </label>
+                            )
+                        })}
                     </div>
-                    {a.explanation && (
-                      <div className="text-emerald-900/80 mt-1 leading-relaxed text-xs">
-                        {a.explanation}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+                )}
+
+                {/* Short Answer (Textarea) */}
+                {isSA && (
+                    <div className="space-y-3">
+                        <textarea
+                            className={`w-full border rounded-lg p-3 text-sm focus:outline-none transition-all ${
+                                submitted 
+                                ? (chosenIsCorrect ? "border-emerald-300 bg-emerald-50/20 text-emerald-900" : "border-red-300 bg-red-50/20 text-red-900")
+                                : "border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                            }`}
+                            rows={3}
+                            placeholder="Type your answer here..."
+                            value={chosen}
+                            onChange={(e) => {
+                                if(!submitted && !isReplay) setSel(p => ({...p, [q.id]: e.target.value}))
+                            }}
+                            disabled={submitted || isReplay}
+                        />
+                        {submitted && (
+                            <div className={`text-xs font-medium ${chosenIsCorrect ? "text-emerald-600" : "text-red-600"}`}>
+                                {chosenIsCorrect ? "AI Assessment: Correct" : "AI Assessment: Incorrect / Incomplete"}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Reveal Answer Section */}
+                {reveal && a && (
+                    <div className="mt-4 pt-4 border-t border-dashed border-gray-200 animate-in fade-in">
+                        <div className="bg-emerald-50/50 border border-emerald-100 rounded-lg p-3">
+                            <p className="text-[10px] font-bold text-emerald-700 uppercase mb-1">Correct Answer</p>
+                            <p className="text-sm font-medium text-emerald-900 mb-2">{a.answer}</p>
+                            {a.explanation && <p className="text-xs text-emerald-800/80 leading-relaxed">{a.explanation}</p>}
+                        </div>
+                    </div>
+                )}
+              </div>
             </div>
           );
         })}

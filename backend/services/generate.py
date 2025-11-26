@@ -1,8 +1,9 @@
 # backend/services/generate.py
-from typing import List, Dict
+from typing import List, Dict, Any
 import re
 import os
 import time
+import json
 
 from backend.services.llm import llm_complete
 
@@ -139,6 +140,209 @@ def generate_mcqs_from_source(source: str, n: int = 5) -> List[Dict]:
         time.sleep(2 ** (attempt - 1))
 
     return []
+
+# ============================
+# TRUE/FALSE GENERATION
+# ============================
+
+TF_PROMPT_TEMPLATE = """
+{system_hint}
+
+Source text:
+\"\"\" 
+{source}
+\"\"\"
+
+You MUST return exactly {n} True/False questions following the FORMAT below.
+
+Example format:
+
+Q: The sky is usually green.
+Answer: False
+Explanation: The sky appears blue due to Rayleigh scattering.
+
+---
+
+Now write exactly {n} True/False questions based on the source.
+IMPORTANT:
+- Start every question with "Q:".
+- "Answer:" must be either "True" or "False" (case insensitive).
+- "Explanation:" must provide a reason.
+- No numbering or extra text.
+"""
+
+_TF_BLOCK = re.compile(
+    r"""
+    Q:\s*(?P<prompt>.+?)\s*
+    \n+\s*Answer:\s*(?P<ans>True|False)\s*
+    (?:\n+\s*Explanation:\s*(?P<exp>.+?))?
+    (?=(?:\n+---|\n+Q:|\Z))
+    """,
+    re.IGNORECASE | re.DOTALL | re.VERBOSE,
+)
+
+def parse_tf(raw: str) -> List[Dict]:
+    if not raw: return []
+    text = raw.strip()
+    out: List[Dict] = []
+    for m in _TF_BLOCK.finditer(text):
+        prompt = m.group("prompt").strip()
+        ans = m.group("ans").strip().capitalize() # Ensure "True" or "False"
+        exp = (m.group("exp") or "").strip()
+        
+        out.append({
+            "prompt": prompt,
+            "options": ["True", "False"], # Standard options for T/F
+            "answer": ans,
+            "explanation": exp
+        })
+    return out
+
+def generate_true_false_from_source(source: str, n: int = 5) -> List[Dict]:
+    if not source or len(source.split()) < 40: return []
+    
+    if len(source) > MAX_CHARS_HARD_LIMIT:
+        half = MAX_CHARS_HARD_LIMIT // 2
+        source = source[:half] + "\n\n[... trimmed ...]\n\n" + source[-half:]
+
+    prompt = TF_PROMPT_TEMPLATE.format(
+        system_hint="You are a precise assistant. Generate True/False questions.",
+        source=source, 
+        n=n
+    )
+    
+    # Reuse simple retry logic or just call once
+    try:
+        raw = llm_complete(prompt=prompt, temperature=0.2, max_tokens=2000)
+        return parse_tf(raw)[:n]
+    except Exception:
+        return []
+
+# ============================
+# SHORT ANSWER GENERATION
+# ============================
+
+SA_PROMPT_TEMPLATE = """
+{system_hint}
+
+Source text:
+\"\"\" 
+{source}
+\"\"\"
+
+You MUST return exactly {n} Short Answer questions.
+The "Answer" should be the ideal concise response (1-2 sentences).
+
+Example format:
+
+Q: What implies the presence of a gravitational field?
+Answer: The presence of mass curves spacetime, creating a gravitational field.
+Explanation: This is a fundamental concept of General Relativity.
+
+---
+
+Now write exactly {n} questions.
+IMPORTANT:
+- Start with "Q:".
+- "Answer:" is the correct model answer.
+- "Explanation:" provides context.
+"""
+
+_SA_BLOCK = re.compile(
+    r"""
+    Q:\s*(?P<prompt>.+?)\s*
+    \n+\s*Answer:\s*(?P<ans>.+?)\s*
+    (?:\n+\s*Explanation:\s*(?P<exp>.+?))?
+    (?=(?:\n+---|\n+Q:|\Z))
+    """,
+    re.IGNORECASE | re.DOTALL | re.VERBOSE,
+)
+
+def parse_sa(raw: str) -> List[Dict]:
+    if not raw: return []
+    text = raw.strip()
+    out: List[Dict] = []
+    for m in _SA_BLOCK.finditer(text):
+        prompt = m.group("prompt").strip()
+        ans = m.group("ans").strip()
+        exp = (m.group("exp") or "").strip()
+        
+        out.append({
+            "prompt": prompt,
+            "options": [], # No options for Short Answer
+            "answer": ans,
+            "explanation": exp
+        })
+    return out
+
+def generate_short_answer_from_source(source: str, n: int = 5) -> List[Dict]:
+    if not source or len(source.split()) < 40: return []
+    
+    if len(source) > MAX_CHARS_HARD_LIMIT:
+        half = MAX_CHARS_HARD_LIMIT // 2
+        source = source[:half] + "\n\n[... trimmed ...]\n\n" + source[-half:]
+
+    prompt = SA_PROMPT_TEMPLATE.format(
+        system_hint="You are a teacher creating short answer test questions.",
+        source=source, 
+        n=n
+    )
+    
+    try:
+        raw = llm_complete(prompt=prompt, temperature=0.2, max_tokens=2000)
+        return parse_sa(raw)[:n]
+    except Exception:
+        return []
+
+# ============================
+# SHORT ANSWER GRADING
+# ============================
+
+GRADING_PROMPT = """
+You are a strict teacher grading student answers.
+Compare the Student Answer to the Correct Answer/Explanation.
+If the student's answer conveys the correct key concept (even if worded differently), mark it correct.
+If it is wrong, incomplete, or irrelevant, mark it incorrect.
+
+Return ONLY a JSON object mapping Question ID to boolean (true for correct, false for incorrect).
+Format: {{"101": true, "102": false}}
+
+Questions to Grade:
+{content}
+"""
+
+def grade_short_answers(items: List[Dict[str, Any]]) -> Dict[int, bool]:
+    """
+    items: list of dicts { 'id': int, 'prompt': str, 'correct_answer': str, 'user_answer': str }
+    Returns: dict { question_id: bool }
+    """
+    if not items:
+        return {}
+
+    content_lines = []
+    for item in items:
+        content_lines.append(f"ID: {item['id']}")
+        content_lines.append(f"Question: {item['prompt']}")
+        content_lines.append(f"Correct Answer: {item['correct_answer']}")
+        content_lines.append(f"Student Answer: {item['user_answer']}")
+        content_lines.append("---")
+    
+    prompt = GRADING_PROMPT.format(content="\n".join(content_lines))
+    
+    try:
+        raw = llm_complete(prompt=prompt, temperature=0.0, max_tokens=1000)
+        # Try to find JSON object in text (in case of extra chatter)
+        match = re.search(r"\{.*\}", raw, re.DOTALL)
+        if match:
+            json_str = match.group(0)
+            results = json.loads(json_str)
+            # Ensure keys are integers (JSON keys are always strings)
+            return {int(k): v for k, v in results.items()}
+    except Exception as e:
+        print(f"Grading error: {e}")
+    
+    # Fallback: Mark all false if AI fails (safe default)
+    return {i['id']: False for i in items}
 
 # ... (Keep Flashcard/Summary functions as they were, or add similar debugs if you like) ...
 # ============================

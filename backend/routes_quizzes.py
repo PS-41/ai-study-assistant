@@ -2,7 +2,12 @@
 from flask import Blueprint, request, jsonify, g
 from backend.db import get_db
 from backend.models import Document, Quiz, Question, Attempt, AttemptAnswer
-from backend.services.generate import generate_mcqs_from_source
+from backend.services.generate import (
+    generate_mcqs_from_source, 
+    generate_true_false_from_source, 
+    generate_short_answer_from_source,
+    grade_short_answers
+)
 from backend.services.extract import read_document_text
 from backend.utils_auth import auth_required
 import os
@@ -47,58 +52,82 @@ def _fetch_docs_from_payload(payload):
 def generate():
     try:
         payload = request.get_json(force=True)
-
         title = payload.get("title", "Generated Quiz")
-        num_questions = int(payload.get("n", 5))
+        
+        # Config extraction
+        n_mcq = int(payload.get("n_mcq", 5))
+        include_sa = payload.get("include_short_answer", False)
+        n_sa = int(payload.get("n_short_answer", 3)) if include_sa else 0
+        include_tf = payload.get("include_true_false", False)
+        n_tf = int(payload.get("n_true_false", 3)) if include_tf else 0
+
+        # Fallback compatibility if only 'n' is sent (old frontend)
+        if "n" in payload and "n_mcq" not in payload:
+            n_mcq = int(payload["n"])
 
         db = get_db()
         
         # 1. Resolve documents
         docs, err = _fetch_docs_from_payload(payload)
-        if err:
-            msg, code = err
-            return jsonify({"error": msg}), code
-        
+        if err: return jsonify({"error": err[0]}), err[1]
 
-        # 2. Extract and Combine Text
+        # 2. Extract Text
         full_text_parts = []
         for doc in docs:
             text = read_document_text(doc.filename)
             if text:
                 full_text_parts.append(f"--- Source: {doc.original_name} ---\n{text}")
         combined_text = "\n\n".join(full_text_parts)
-        word_count = len(combined_text.split())
+        
+        if not combined_text or len(combined_text.split()) < 50:
+            return jsonify({"error": "not enough text"}), 400
 
-        if not combined_text or word_count < 50:
-            return jsonify({"error": "not enough text in selected documents"}), 400
+        # 3. Generate Questions in Parallel/Sequence
+        all_questions = []
 
-        # 3. Generate
-        mcqs = generate_mcqs_from_source(combined_text, n=num_questions)
+        # A. MCQs
+        if n_mcq > 0:
+            mcqs = generate_mcqs_from_source(combined_text, n=n_mcq)
+            for m in mcqs: m["type"] = "mcq"
+            all_questions.extend(mcqs)
 
-        if not mcqs:
-            return jsonify({"error": "failed to generate questions from text"}), 400
+        # B. True/False
+        if n_tf > 0:
+            tfs = generate_true_false_from_source(combined_text, n=n_tf)
+            for t in tfs: t["type"] = "true_false"
+            all_questions.extend(tfs)
+
+        # C. Short Answer
+        if n_sa > 0:
+            sas = generate_short_answer_from_source(combined_text, n=n_sa)
+            for s in sas: s["type"] = "short_answer"
+            all_questions.extend(sas)
+
+        if not all_questions:
+            return jsonify({"error": "failed to generate any questions"}), 400
 
         # 4. Save to DB
         quiz = Quiz(title=title)
         db.add(quiz)
         db.flush()
-
         quiz.sources.extend(docs)
 
-        for m in mcqs:
-            opts = "|||".join(m["options"])
+        for q_data in all_questions:
+            # For short answer, options list is empty, join returns ""
+            opts_str = "|||".join(q_data["options"]) if q_data["options"] else ""
+            
             q = Question(
                 quiz_id=quiz.id,
-                qtype="mcq",
-                prompt=m["prompt"],
-                options=opts,
-                answer=m["answer"],
-                explanation=m.get("explanation", "")
+                qtype=q_data["type"],
+                prompt=q_data["prompt"],
+                options=opts_str,
+                answer=q_data["answer"],
+                explanation=q_data.get("explanation", "")
             )
             db.add(q)
         
         db.commit()
-        return jsonify({"quiz_id": quiz.id, "count": len(mcqs)})
+        return jsonify({"quiz_id": quiz.id, "count": len(all_questions)})
 
     except Exception as e:
         import traceback
@@ -145,8 +174,7 @@ def attempt():
 
     db = get_db()
     qs = list(db.query(Question).filter_by(quiz_id=quiz_id).all())
-    if not qs:
-        return jsonify({"error": "quiz not found"}), 404
+    if not qs: return jsonify({"error": "quiz not found"}), 404
 
     qmap = {q.id: q for q in qs}
     total = len(qs)
@@ -154,31 +182,76 @@ def attempt():
     att = Attempt(quiz_id=quiz_id)
     db.add(att); db.flush()
 
-    correct = 0
-    details = []
+    # Separate logic: Auto-grade vs AI-grade
+    to_grade_ai = [] # list of {id, prompt, correct, user}
+    
+    attempt_answers_objects = [] # To bulk add later or update
 
     for a in answers:
         qid = int(a.get("question_id"))
-        ans = str(a.get("user_answer", "")).strip()
+        user_ans = str(a.get("user_answer", "")).strip()
         q = qmap.get(qid)
-        if not q:
-            continue
-        is_ok = (ans == q.answer)
-        if is_ok:
-            correct += 1
-        db.add(AttemptAnswer(
-            attempt_id=att.id,
-            question_id=qid,
-            user_answer=ans,
-            is_correct=is_ok
-        ))
-        details.append({"question_id": qid, "user_answer": ans, "is_correct": is_ok})
+        if not q: continue
 
-    att.score_pct = round(100 * correct / max(1, total))
+        is_correct = False
+        
+        # Logic based on type
+        if q.qtype == "short_answer":
+            # Queue for AI grading
+            # Create the record as False initially
+            aa = AttemptAnswer(attempt_id=att.id, question_id=qid, user_answer=user_ans, is_correct=False)
+            db.add(aa); db.flush() # Need ID if we want to update, or just reference obj
+            to_grade_ai.append({
+                "db_obj": aa,
+                "item": {
+                    "id": qid, 
+                    "prompt": q.prompt, 
+                    "correct_answer": q.answer, 
+                    "user_answer": user_ans
+                }
+            })
+        else:
+            # MCQ or True/False: Exact match (case insensitive for T/F mostly handled by frontend, but safe here)
+            if q.qtype == "true_false":
+                is_correct = (user_ans.lower() == q.answer.lower())
+            else:
+                # MCQ: exact string match of option
+                is_correct = (user_ans == q.answer)
+            
+            db.add(AttemptAnswer(attempt_id=att.id, question_id=qid, user_answer=user_ans, is_correct=is_correct))
+
+    # Perform Batch AI Grading
+    if to_grade_ai:
+        ai_items = [x["item"] for x in to_grade_ai]
+        results_map = grade_short_answers(ai_items) # {qid: bool}
+        
+        for entry in to_grade_ai:
+            qid = entry["item"]["id"]
+            is_correct = results_map.get(qid, False)
+            entry["db_obj"].is_correct = is_correct
+
     db.commit()
+
+    # Recalculate Score
+    # Reload answers to be safe
+    final_answers = db.query(AttemptAnswer).filter_by(attempt_id=att.id).all()
+    correct_count = sum(1 for a in final_answers if a.is_correct)
+    
+    att.score_pct = round(100 * correct_count / max(1, total))
+    db.commit()
+
+    # Build response details
+    details = []
+    for ans in final_answers:
+        details.append({
+            "question_id": ans.question_id,
+            "user_answer": ans.user_answer,
+            "is_correct": ans.is_correct
+        })
+
     return jsonify({
         "attempt_id": att.id,
-        "correct": correct,
+        "correct": correct_count,
         "total": total,
         "score_pct": att.score_pct,
         "details": details
