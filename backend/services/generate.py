@@ -7,6 +7,7 @@ import time
 from backend.services.llm import llm_complete
 
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
+MAX_CHARS_HARD_LIMIT = 75_000  # ~25k tokens; safe for most 32k-context models
 
 # ============================
 # MCQ GENERATION
@@ -15,6 +16,7 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
 SYSTEM_HINT = (
     "You are a precise and helpful assistant that writes clear multiple-choice questions (MCQs) "
     "based STRICTLY on the provided source text and concepts present in the source text. Avoid trivia; focus on key ideas. "
+    "READ the entire source text, it can contain different source, CONSIDER and INCLUDE everything till the end. "
     "Each question must have exactly 4 options, with ONLY ONE correct answer. "
     "Do NOT add introductions, summaries, or any text outside the required format. "
     "Return exactly N questions FOLLOWING THE EXAMPLE FORMAT BELOW — nothing else."
@@ -51,6 +53,7 @@ IMPORTANT INSTRUCTIONS (must follow):
 - "Explanation:" must start on a NEW line after "Answer:". Explanation should be one or two concise sentence explaining why that answer is correct.
 - Do NOT include any additional commentary, titles, or text before or after the questions.
 - Do NOT use the question shown in the example, it is only to show you the format.
+- USE each source text content without missing anything
 """
 
 _Q_BLOCK = re.compile(
@@ -68,7 +71,6 @@ _Q_BLOCK = re.compile(
 )
 
 def parse_mcqs(raw: str) -> List[Dict]:
-    print("[DEBUG] Parsing MCQs from raw output...")
     if not raw:
         return []
     text = raw.strip()
@@ -88,7 +90,6 @@ def parse_mcqs(raw: str) -> List[Dict]:
         explanation = re.sub(r"\s+\Z", "", exp_raw).strip() if exp_raw else ""
 
         if len(opts) != 4 or ans_letter not in ("A", "B", "C", "D"):
-            print(f"[DEBUG] Skipping malformed question or invalid answer letter: {ans_letter}")
             continue
 
         answer_text = opts[ord(ans_letter) - ord("A")]
@@ -100,29 +101,30 @@ def parse_mcqs(raw: str) -> List[Dict]:
                 "explanation": explanation,
             }
         )
-    print(f"[DEBUG] Parsed {len(out)} MCQs successfully.")
     return out
 
 
 def generate_mcqs_from_source(source: str, n: int = 5) -> List[Dict]:
     if not source or len(source.split()) < 40:
-        print("[DEBUG] Source too short for generation.")
         return []
+
+    # Enforce per-call OR hard limit
+    if len(source) > MAX_CHARS_HARD_LIMIT:
+        # Keep both beginning and end for context
+        half = MAX_CHARS_HARD_LIMIT // 2
+        source = source[:half] + "\n\n[... trimmed for length ...]\n\n" + source[-half:]
 
     prompt = PROMPT_TEMPLATE.format(system_hint=SYSTEM_HINT, source=source, n=n)
 
     max_retries = 3
     for attempt in range(1, max_retries + 1):
         try:
-            print(f"[DEBUG] LLM Attempt {attempt}/{max_retries}...")
             raw = llm_complete(
                 prompt=prompt,
                 temperature=0.2,
-                max_tokens=1500,
+                max_tokens=3000,
             )
-            print(f"[DEBUG] LLM Output (first 200 chars): {raw[:200]}...")
         except Exception as e:
-            print(f"[DEBUG] LLM Attempt {attempt} failed: {e}")
             if attempt == max_retries:
                 return []
             time.sleep(2 ** (attempt - 1))
@@ -132,7 +134,6 @@ def generate_mcqs_from_source(source: str, n: int = 5) -> List[Dict]:
         if mcqs:
             return mcqs[:n]
 
-        print("[DEBUG] Failed to parse MCQs from this attempt.")
         if attempt == max_retries:
             return []
         time.sleep(2 ** (attempt - 1))
@@ -188,8 +189,13 @@ def parse_flashcards(raw: str) -> List[Dict[str, str]]:
 
 
 def generate_flashcards_from_source(source: str, n: int = 12) -> List[Dict[str, str]]:
+    # Enforce per-call OR hard limit
+    if len(source) > MAX_CHARS_HARD_LIMIT:
+        # Keep both beginning and end for context
+        half = MAX_CHARS_HARD_LIMIT // 2
+        source = source[:half] + "\n\n[... trimmed for length ...]\n\n" + source[-half:]
     prompt = FLASHCARD_PROMPT_TEMPLATE.format(source=source, n=n)
-    raw = llm_complete(prompt=prompt, max_tokens=1000, temperature=0.25)
+    raw = llm_complete(prompt=prompt, max_tokens=2000, temperature=0.25)
     return parse_flashcards(raw)
 
 # ============================
@@ -212,6 +218,11 @@ Write a summary for this content.
 """
 
 def generate_summary_from_source(source: str, detail_level: str = "brief") -> str:
+    # Enforce per-call OR hard limit
+    if len(source) > MAX_CHARS_HARD_LIMIT:
+        # Keep both beginning and end for context
+        half = MAX_CHARS_HARD_LIMIT // 2
+        source = source[:half] + "\n\n[... trimmed for length ...]\n\n" + source[-half:]
     style_instruction = ""
     max_tokens = 800
     
@@ -220,7 +231,7 @@ def generate_summary_from_source(source: str, detail_level: str = "brief") -> st
         max_tokens = 5000
     else:
         style_instruction = "Write a concise summary with 1-2 paragraphs and a few key bullet points."
-        max_tokens = 1600
+        max_tokens = 2000
 
     prompt = SUMMARY_PROMPT_TEMPLATE.format(source=source, style_instruction=style_instruction)
     text = llm_complete(prompt=prompt, max_tokens=max_tokens, temperature=0.25)

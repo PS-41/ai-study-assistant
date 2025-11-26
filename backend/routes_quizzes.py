@@ -11,10 +11,8 @@ bp = Blueprint("quizzes", __name__)
 
 def _fetch_docs_from_payload(payload):
     db = get_db()
-    print(f"[DEBUG] Fetching docs for payload keys: {list(payload.keys())}")
 
     if payload.get("document_id"):
-        print(f"[DEBUG] Single doc ID: {payload['document_id']}")
         doc_id = int(payload["document_id"])
         doc = db.query(Document).filter_by(id=doc_id).first()
         if not doc: return [], ("document not found", 404)
@@ -22,14 +20,12 @@ def _fetch_docs_from_payload(payload):
         return [doc], None
 
     if payload.get("document_ids"):
-        print(f"[DEBUG] Multiple doc IDs: {payload['document_ids']}")
         ids = payload["document_ids"]
         docs = db.query(Document).filter(Document.id.in_(ids)).all()
         valid_docs = [d for d in docs if d.user_id is None or d.user_id == g.user_id]
         return valid_docs, None
 
     if payload.get("course_id"):
-        print(f"[DEBUG] Course ID: {payload['course_id']}")
         cid = int(payload["course_id"])
         docs = db.query(Document).filter_by(course_id=cid).filter(
             (Document.user_id == g.user_id) | (Document.user_id.is_(None))
@@ -37,14 +33,12 @@ def _fetch_docs_from_payload(payload):
         return docs, None
 
     if payload.get("topic_id"):
-        print(f"[DEBUG] Topic ID: {payload['topic_id']}")
         tid = int(payload["topic_id"])
         docs = db.query(Document).filter_by(topic_id=tid).filter(
             (Document.user_id == g.user_id) | (Document.user_id.is_(None))
         ).all()
         return docs, None
 
-    print("[DEBUG] No valid selection found in payload")
     return [], ("no document selection provided", 400)
 
 
@@ -53,8 +47,6 @@ def _fetch_docs_from_payload(payload):
 def generate():
     try:
         payload = request.get_json(force=True)
-        print(f"\n--- [DEBUG] START QUIZ GENERATION ---")
-        print(f"[DEBUG] Payload: {payload}")
 
         title = payload.get("title", "Generated Quiz")
         num_questions = int(payload.get("n", 5))
@@ -64,37 +56,26 @@ def generate():
         # 1. Resolve documents
         docs, err = _fetch_docs_from_payload(payload)
         if err:
-            print(f"[DEBUG] Error resolving docs: {err}")
             msg, code = err
             return jsonify({"error": msg}), code
         
-        print(f"[DEBUG] Found {len(docs)} documents: {[d.original_name for d in docs]}")
 
         # 2. Extract and Combine Text
         full_text_parts = []
         for doc in docs:
-            print(f"[DEBUG] Reading text for: {doc.filename}")
             text = read_document_text(doc.filename)
             if text:
                 full_text_parts.append(f"--- Source: {doc.original_name} ---\n{text}")
-            else:
-                print(f"[DEBUG] WARNING: No text extracted for {doc.filename}")
-        
         combined_text = "\n\n".join(full_text_parts)
         word_count = len(combined_text.split())
-        print(f"[DEBUG] Combined text length: {len(combined_text)} chars, ~{word_count} words")
 
         if not combined_text or word_count < 50:
-            print("[DEBUG] Error: Not enough text")
             return jsonify({"error": "not enough text in selected documents"}), 400
 
         # 3. Generate
-        print(f"[DEBUG] Calling LLM generation for {num_questions} questions...")
         mcqs = generate_mcqs_from_source(combined_text, n=num_questions)
-        print(f"[DEBUG] LLM returned {len(mcqs)} MCQs")
 
         if not mcqs:
-            print("[DEBUG] Error: No MCQs parsed")
             return jsonify({"error": "failed to generate questions from text"}), 400
 
         # 4. Save to DB
@@ -117,7 +98,6 @@ def generate():
             db.add(q)
         
         db.commit()
-        print(f"[DEBUG] Quiz saved with ID: {quiz.id}")
         return jsonify({"quiz_id": quiz.id, "count": len(mcqs)})
 
     except Exception as e:
