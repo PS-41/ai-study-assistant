@@ -4,6 +4,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import GenerateModal from "../components/GenerateModal";
 import { AttemptsModal } from "../components/LibraryModals";
+import AudioPlayer from "../components/AudioPlayer";
 
 // --- Types ---
 type QuizItem = {
@@ -131,7 +132,12 @@ export default function DocDetailsPage() {
   // Data
   const [quizzes, setQuizzes] = useState<QuizItem[]>([]);
   const [flashsets, setFlashsets] = useState<FlashcardSetItem[]>([]);
-  const [summary, setSummary] = useState<{ content: string; created_at: string } | null>(null);
+  const [summary, setSummary] = useState<{
+    id: number;
+    content: string;
+    created_at: string;
+    audio_filename?: string;
+  } | null>(null);
 
   // Action States
   const [activeGenType, setActiveGenType] = useState<"quiz" | "flashcards" | "summary" | null>(null);
@@ -169,8 +175,10 @@ export default function DocDetailsPage() {
         const latestSummaryId = summaries[0].id;
         const detailRes = await api.get(`/api/summaries/${latestSummaryId}`);
         setSummary({
+          id: detailRes.data.id, // <--- Added
           content: detailRes.data.summary || detailRes.data.content,
           created_at: detailRes.data.created_at,
+          audio_filename: detailRes.data.audio_filename, // <--- Added
         });
       } else {
         setSummary(null);
@@ -516,6 +524,17 @@ export default function DocDetailsPage() {
                     Generated on {new Date(summary.created_at).toLocaleDateString()}
                   </p>
                 </div>
+              </div>
+              {/* Audio Player Injection */}
+              <div className="mb-8">
+                <AudioPlayer 
+                  summaryId={summary.id} 
+                  hasAudio={!!summary.audio_filename}
+                  onGenerate={async (voice) => {
+                    await api.post(`/api/summaries/${summary.id}/audio`, { voice });
+                    loadAll(); // Reloads page data to update the UI state
+                  }}
+                />
               </div>
               <div className="prose prose-slate prose-lg max-w-none text-gray-700 leading-relaxed">
                 {summary.content.split("\n").map((line, i) => {

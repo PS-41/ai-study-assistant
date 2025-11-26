@@ -7,3 +7,4 @@ requests
 bcrypt
 pyjwt
 python-dotenv
+gTTS

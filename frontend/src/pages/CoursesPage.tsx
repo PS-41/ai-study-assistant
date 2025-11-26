@@ -634,7 +634,7 @@ export default function CoursesPage() {
               </div>
               <div>
                 <div className="font-semibold text-gray-800 text-sm">
-                  Summary
+                  Summary/Audio
                 </div>
                 <div className="text-xs text-gray-500">Brief overview</div>
               </div>

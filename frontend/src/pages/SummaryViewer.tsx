@@ -2,15 +2,18 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
+import AudioPlayer from "../components/AudioPlayer";
 
 export default function SummaryViewer() {
   const { id } = useParams();
   const nav = useNavigate();
   const [summary, setSummary] = useState<{
+    id: number;
     title: string;
     content: string;
     sources: string[];
     created_at: string;
+    audio_filename?: string;
   } | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -21,6 +24,14 @@ export default function SummaryViewer() {
       .catch(() => alert("Failed to load summary"))
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Add Handler
+  const handleGenerateAudio = async (voice: string) => {
+    if(!summary) return;
+    await api.post(`/api/summaries/${summary.id}/audio`, { voice });
+    // No need to reload everything, the AudioPlayer handles state locally mostly, 
+    // but refreshing summary ensures consistency on re-entry
+  };
 
   if (loading)
     return (
@@ -83,6 +94,13 @@ export default function SummaryViewer() {
               ))}
             </div>
           </div>
+
+          {/* INSERT AUDIO PLAYER HERE */}
+          <AudioPlayer 
+            summaryId={summary.id} 
+            hasAudio={!!summary.audio_filename} 
+            onGenerate={handleGenerateAudio}
+          />
 
           {/* Content – match DocDetailsPage summary formatting */}
           <article className="prose prose-lg prose-slate max-w-none text-gray-700 leading-relaxed">

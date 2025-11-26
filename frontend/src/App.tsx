@@ -192,7 +192,7 @@ function Home({me}:{me:any}) {
         />
         <FeatureCard 
           icon={<HomeIcons.Summary />}
-          title="Summaries"
+          title="Summaries / Audio"
           desc="Digest long readings in seconds. Get concise or detailed overviews of any PDF."
         />
         <FeatureCard 

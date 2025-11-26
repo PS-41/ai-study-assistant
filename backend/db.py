@@ -68,6 +68,13 @@ def run_schema_migrations(engine):
         # We will handle this by passing an empty string or dummy value if necessary in code, 
         # or relying on the fact that legacy users have it.
 
+        # 5. Add audio_filename to summaries
+        cols_sum = conn.execute(text("PRAGMA table_info(summaries)")).fetchall()
+        col_names_sum = {c[1] for c in cols_sum}
+
+        if "audio_filename" not in col_names_sum:
+            conn.execute(text("ALTER TABLE summaries ADD COLUMN audio_filename TEXT NULL"))
+
 def get_db():
     """Return a request-scoped SQLAlchemy session."""
     if "db" not in g:

@@ -1,13 +1,16 @@
 # backend/routes_summaries.py
-from flask import Blueprint, request, jsonify, g
+import os
+from flask import Blueprint, request, jsonify, g, send_file
 from backend.db import get_db
 from backend.models import Document, Summary
-from backend.services.extract import read_document_text
+from backend.services.extract import read_document_text, UPLOAD_DIR
 from backend.services.generate import generate_summary_from_source
+from backend.services.tts import generate_audio_for_summary
 from backend.utils_auth import auth_required
 
 bp = Blueprint("summaries", __name__)
 
+# ... [Keep your existing _fetch_docs_from_payload helper exactly as is] ...
 def _fetch_docs_from_payload(payload):
     # Duplicate helper for self-contained file changes
     db = get_db()
@@ -36,7 +39,6 @@ def _fetch_docs_from_payload(payload):
         return docs, None
     return [], ("no selection", 400)
 
-
 @bp.get("/")
 @auth_required
 def list_summaries():
@@ -44,7 +46,6 @@ def list_summaries():
     db = get_db()
     q = db.query(Summary).filter_by(user_id=g.user_id)
     
-    # Optional: filter by containing doc
     doc_id = request.args.get("document_id", type=int)
     if doc_id:
         q = q.filter(Summary.sources.any(Document.id == doc_id))
@@ -81,6 +82,7 @@ def get_summary(summary_id):
         "content": s.content,
         "sources": source_names,
         "created_at": s.created_at.isoformat() if s.created_at else None,
+        "audio_filename": s.audio_filename  # <--- Added field
     })
 
 
@@ -150,6 +152,71 @@ def delete_summary(id):
     if not s or s.user_id != g.user_id:
         return jsonify({"error": "forbidden"}), 403
 
+    # --- NEW LOGIC: DELETE AUDIO FILE IF EXISTS ---
+    if s.audio_filename:
+        path = os.path.join(UPLOAD_DIR, s.audio_filename)
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+            except Exception as e:
+                print(f"Error deleting audio file {path}: {e}")
+    # ----------------------------------------------
+
     db.delete(s)
     db.commit()
     return jsonify({"ok": True})
+
+# --- NEW AUDIO ROUTES ---
+
+@bp.post("/<int:summary_id>/audio")
+@auth_required
+def generate_summary_audio(summary_id):
+    payload = request.get_json() or {}
+    voice = payload.get("voice", "us") 
+
+    db = get_db()
+    s = db.query(Summary).filter_by(id=summary_id).first()
+    
+    if not s: return jsonify({"error": "not found"}), 404
+    if s.user_id != g.user_id: return jsonify({"error": "forbidden"}), 403
+
+    # CLEANUP: If an audio file already exists (perhaps with a different name/accent), delete it first
+    if s.audio_filename:
+        old_path = os.path.join(UPLOAD_DIR, s.audio_filename)
+        if os.path.exists(old_path):
+            try:
+                os.remove(old_path)
+            except Exception as e:
+                print(f"Warning: Could not delete old audio: {e}")
+
+    try:
+        # Strip markdown asterisks for cleaner reading
+        clean_text = s.content.replace("**", "").replace("#", "")
+        filename = generate_audio_for_summary(clean_text, voice, s.id)
+        
+        if not filename:
+            return jsonify({"error": "Audio generation failed"}), 500
+
+        s.audio_filename = filename
+        db.commit()
+        
+        return jsonify({"ok": True, "audio_filename": filename})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@bp.get("/<int:summary_id>/audio")
+@auth_required
+def get_summary_audio(summary_id):
+    db = get_db()
+    s = db.query(Summary).filter_by(id=summary_id).first()
+    
+    if not s or not s.audio_filename:
+        return jsonify({"error": "audio not found"}), 404
+    if s.user_id != g.user_id:
+        return jsonify({"error": "forbidden"}), 403
+
+    path = os.path.join(UPLOAD_DIR, s.audio_filename)
+    if not os.path.exists(path):
+        return jsonify({"error": "file missing"}), 404
+
+    return send_file(path, mimetype="audio/mpeg")

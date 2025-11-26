@@ -204,8 +204,8 @@ export default function UploadPage() {
               <div className="bg-purple-50 w-10 h-10 rounded-lg flex items-center justify-center text-purple-600 mb-4">
                 <Icons.Summary />
               </div>
-              <h3 className="font-semibold text-gray-900 mb-2">Smart Summaries</h3>
-              <p className="text-sm text-gray-500">Get a concise or detailed summary of your document to review key concepts quickly.</p>
+              <h3 className="font-semibold text-gray-900 mb-2">Smart Summaries / Audio</h3>
+              <p className="text-sm text-gray-500">Get a concise or detailed text and audio summary of your document to review key concepts quickly.</p>
             </div>
           </div>
         </div>

@@ -611,7 +611,7 @@ export default function DocsPage() {
               </div>
               <div>
                 <div className="font-semibold text-gray-800 text-sm">
-                  Summary
+                  Summary/Audio
                 </div>
                 <div className="text-xs text-gray-500">Get a quick overview</div>
               </div>
