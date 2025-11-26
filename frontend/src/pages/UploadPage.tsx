@@ -190,8 +190,8 @@ export default function UploadPage() {
               <div className="bg-blue-50 w-10 h-10 rounded-lg flex items-center justify-center text-blue-600 mb-4">
                 <Icons.Quiz />
               </div>
-              <h3 className="font-semibold text-gray-900 mb-2">Generate Quizzes</h3>
-              <p className="text-sm text-gray-500">Create multiple-choice quizzes to test your knowledge. You can choose the number of questions.</p>
+              <h3 className="font-semibold text-gray-900 mb-2">Generate Quizzes / Short Answer Questions</h3>
+              <p className="text-sm text-gray-500">Create multiple-choice, short answer and true/false quizzes to test your knowledge. You can choose the number of questions.</p>
             </div>
             <div className="bg-white p-6 rounded-xl border shadow-sm">
               <div className="bg-emerald-50 w-10 h-10 rounded-lg flex items-center justify-center text-emerald-600 mb-4">

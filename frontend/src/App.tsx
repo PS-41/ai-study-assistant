@@ -182,8 +182,8 @@ function Home({me}:{me:any}) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full">
         <FeatureCard 
           icon={<HomeIcons.Quiz />}
-          title="AI Quizzes"
-          desc="Test your knowledge with auto-generated multiple choice questions from your slides."
+          title="AI Quizzes / Short Answer"
+          desc="Test your knowledge with auto-generated MCQ and short answer questions from your slides."
         />
         <FeatureCard 
           icon={<HomeIcons.Flashcard />}

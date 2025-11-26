@@ -587,7 +587,7 @@ export default function CoursesPage() {
                 <Icons.Quiz />
               </div>
               <div>
-                <div className="font-semibold text-gray-800 text-sm">Quiz</div>
+                <div className="font-semibold text-gray-800 text-sm">Quiz/Short Answer</div>
                 <div className="text-xs text-gray-500">Test your knowledge</div>
               </div>
             </button>
