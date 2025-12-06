@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify, g
 from sqlalchemy import func
 from backend.db import get_db
-from backend.models import Review
+from backend.models import Review, User  # Added User import
 from backend.utils_auth import auth_required
 
 bp = Blueprint("reviews", __name__)
@@ -56,3 +56,35 @@ def get_stats():
         "average": avg,
         "count": count
     })
+
+# --- NEW ENDPOINT ---
+@bp.get("/")
+def list_reviews():
+    """
+    GET /api/reviews
+    List top reviews that have comments.
+    """
+    db = get_db()
+    
+    # Fetch reviews with comments, sorted by rating (desc) then date (desc)
+    # Join User to get names
+    results = (
+        db.query(Review, User.name)
+        .join(User, Review.user_id == User.id)
+        .filter(Review.comment.isnot(None), Review.comment != "")
+        .order_by(Review.rating.desc(), Review.created_at.desc())
+        .limit(50)
+        .all()
+    )
+
+    items = []
+    for r, name in results:
+        items.append({
+            "id": r.id,
+            "user_name": name,
+            "rating": r.rating,
+            "comment": r.comment,
+            "created_at": r.created_at.isoformat() if r.created_at else None
+        })
+
+    return jsonify({"items": items})
