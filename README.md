@@ -153,9 +153,31 @@ ai-study-assistant/
 ---
 
 ## 🔮 Future Roadmap
-- RAG using ChromaDB for large textbook querying  
-- Mobile App (React Native)  
-- Collaborative study tools (share quizzes & flashcards)
+
+- **Social & Competitive Features**  
+  Add the ability to add friends or classmates and introduce a competitive **quiz leaderboard**. Users can compare scores, streaks, and improvement over time for a more engaging study experience.
+
+- **Instructor Dashboard & Auto-Graded Quizzes**  
+  Allow professors or teaching assistants to upload materials and automatically generate quizzes for their classes. All MCQs, True/False, and short-answer questions would be **AI-graded**, with results displayed in an instructor dashboard.
+
+- **Advanced Study Insights & Analytics**  
+  Provide students with detailed performance insights, such as:
+  - Strong and weak topic areas  
+  - Accuracy by question type  
+  - Time spent on each topic  
+  - Performance trends over time  
+  - Personalized revision suggestions  
+  These analytics help users understand where to focus their preparation.
+
+- **RAG for Large Documents**  
+  Integrate a vector database (e.g., ChromaDB) to support retrieval-augmented generation for long PDFs and textbooks, enabling deep contextual querying.
+
+- **Mobile App**  
+  Develop a React Native mobile version so students can access flashcards, quizzes, summaries, and audio content anywhere.
+
+- **Collaborative Study Spaces**  
+  Enable shared flashcard decks, group quiz modes, and team-based study rooms to support collaborative learning.
+
 
 ---
 
