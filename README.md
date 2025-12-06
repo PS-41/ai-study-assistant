@@ -43,8 +43,8 @@ AI Study Assistant is a full-stack web application designed to streamline the re
 
 ### AI & Infrastructure
 - Custom LLM abstraction supporting:  
-  - **Ollama (local)** – Llama 3.2  
-  - **OpenRouter (cloud)** – Qwen 2.5, GPT-4  
+  - **Ollama (local)** – Llama 3.2 (configurable via `OLLAMA_MODEL`)  
+  - **OpenRouter (cloud)** – currently using `qwen/qwen-2.5-72b-instruct` (configurable via `OPENROUTER_MODEL`)  
 - Docker + Docker Compose  
 - Caddy Server (HTTPS + reverse proxy)
 
