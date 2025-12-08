@@ -39,7 +39,7 @@ export default function App() {
       <header className="bg-white border-b sticky top-0 z-30 shadow-sm">
         <nav className="w-full px-6 flex items-center justify-between h-16">
           <Link to="/" className="font-bold text-xl tracking-tight text-blue-600 flex items-center gap-2 hover:opacity-80 transition">
-            <span className="text-2xl">📚</span> AI Study Assistant
+            <span className="text-2xl">📚</span> TailorEd: AI Study Assistant
           </Link>
           
           <div className="flex items-center gap-6 text-sm font-medium">
@@ -102,7 +102,7 @@ export default function App() {
       <footer className="border-t bg-white py-8 mt-auto">
         <div className="w-full px-6 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="text-sm text-gray-500">
-            © 2025 AI Study Assistant. Built for students.
+            © 2025 TailorEd. Built for students.
           </div>
           
           <div className="flex gap-6 text-sm font-medium text-gray-600 items-center">
