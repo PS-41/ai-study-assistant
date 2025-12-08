@@ -223,7 +223,17 @@ export default function QuizPage() {
       nav(`/quiz?quizId=${quizId}`);
     } else {
       // If we are already on the clean URL but just finished submitting, we need to reset state
-      window.location.reload();
+      // window.location.reload();
+      // FIX: Reset state manually instead of reloading to avoid Nginx 404
+      setSel({});
+      setScore(null);
+      setSubmitted(false);
+      setResultDetails({});
+      setResult(null);
+      setResultOpen(false);
+      setShowAnswers(false);
+      setAnswers({});
+      window.scrollTo(0, 0);
     }
   }
 
